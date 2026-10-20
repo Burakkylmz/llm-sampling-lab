@@ -28,7 +28,13 @@ from llm_sampling_lab.experiments import (
     run_temperature_experiment,
     run_top_p_experiment,
 )
+from llm_sampling_lab.movie_reviews import (
+    DEFAULT_MOVIE,
+    DEFAULT_SCENARIOS,
+    run_movie_review_experiment,
+)
 
+from llm_sampling_lab.results import MovieReviewRecorder
 
 SAMPLING_PROMPT = (
     "Create one short and memorable advertising slogan "
@@ -191,6 +197,59 @@ def run_top_p_cli(
 
 
 
+def run_movie_reviews_cli(
+    settings: dict[str, Any],
+) -> None:
+    """Run movie-review scenarios with persistent JSON reporting."""
+
+    model = settings["groq"]["model"]
+
+    recorder = MovieReviewRecorder(
+        model=model,
+        movie=DEFAULT_MOVIE,
+        scenarios=DEFAULT_SCENARIOS,
+        seed=42,
+    )
+
+    try:
+        with create_groq_client() as client:
+            results = run_movie_review_experiment(
+                client=client,
+                model=model,
+                movie=DEFAULT_MOVIE,
+                scenarios=DEFAULT_SCENARIOS,
+                seed=42,
+                on_result=recorder.record,
+            )
+
+        recorder.complete()
+
+    except Exception as exc:
+        recorder.fail(exc)
+        raise
+
+    for result in results:
+        print("\n" + "=" * 60)
+        print(f"SCENARIO: {result.scenario}")
+        print(f"Temperature: {result.temperature}")
+        print(f"Local Top-k: {result.local_top_k}")
+        print(f"Review Style: {result.review_style}")
+        print("=" * 60)
+
+        print(result.review)
+
+        if result.validation_issues:
+            print(
+                "\nValidation Warnings: "
+                + ", ".join(result.validation_issues)
+            )
+        else:
+            print("\nValidation: Passed structural checks")
+
+    print(f"\nJSON Report: {recorder.file_path}")
+
+
+
 def main() -> None:
     """Entry point for the LLM Sampling Lab."""
 
@@ -209,7 +268,7 @@ def main() -> None:
 
     action_group.add_argument(
         "--experiment",
-        choices=["temperature", "top-p"],
+        choices=["temperature", "top-p", "movie-reviews"],
         help="Select a sampling experiment.",
     )
 
@@ -266,7 +325,7 @@ def main() -> None:
     # CLI argument validation
     if args.repetitions is not None:
 
-        if not args.experiment:
+        if args.experiment not in ("temperature", "top-p"):
             parser.error(
                 "--repetitions requires --experiment."
             )
@@ -294,7 +353,7 @@ def main() -> None:
         print("Configuration loaded successfully.")
         print(f"Model: {settings['groq']['model']}")
 
-        if args.experiment:
+        if args.experiment in ("temperature", "top-p"):
             print(f"Repetitions: {effective_repetitions}")
 
         # Command routing
@@ -312,7 +371,10 @@ def main() -> None:
                 settings=settings,
                 repetitions=effective_repetitions,
             )
-
+        elif args.experiment == "movie-reviews":
+            run_movie_reviews_cli(
+                settings=settings,
+            )
         elif args.simulate:
             run_simulation_cli(
                 settings=settings,

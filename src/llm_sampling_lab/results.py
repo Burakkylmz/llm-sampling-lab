@@ -4,7 +4,12 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from collections.abc import Sequence
 
+from llm_sampling_lab.movie_reviews import (
+    Movie,
+    MovieReviewResult,
+)
 from llm_sampling_lab.experiments import SamplingResult
 
 
@@ -166,6 +171,139 @@ class ExperimentRecorder:
 
         temporary_path.write_text(
             content,
+            encoding="utf-8",
+        )
+
+        temporary_path.replace(self.file_path)
+
+
+
+class MovieReviewRecorder:
+    """Persist movie-review experiment results incrementally."""
+
+    def __init__(
+        self,
+        model: str,
+        movie: Movie,
+        scenarios: Sequence[tuple[float, int]],
+        seed: int,
+        output_dir: str | Path = "results",
+    ) -> None:
+
+        self.results: list[MovieReviewResult] = []
+
+        experiment_id = uuid4().hex
+
+        timestamp = datetime.now(timezone.utc).strftime(
+            "%Y%m%dT%H%M%S"
+        )
+
+        directory = Path(output_dir) / "movie_reviews"
+        directory.mkdir(parents=True, exist_ok=True)
+
+        self.file_path = directory / (
+            f"{timestamp}_{experiment_id[:8]}.json"
+        )
+
+        scenario_config = [
+            {
+                "temperature": temperature,
+                "local_top_k": top_k,
+            }
+            for temperature, top_k in scenarios
+        ]
+
+        self.report = {
+            "schema_version": 1,
+            "experiment_id": experiment_id,
+            "experiment_type": "movie_reviews",
+            "model": model,
+            "movie": asdict(movie),
+            "parameters": {
+                "seed": seed,
+                "groq_top_p": 1.0,
+                "scenarios": scenario_config,
+                "top_k_scope": "local_review_style_selection",
+            },
+            "status": "running",
+            "started_at_utc": _utc_now(),
+            "finished_at_utc": None,
+            "error_type": None,
+            "results": [],
+            "summary": {
+                "total_scenarios": len(scenario_config),
+                "completed_scenarios": 0,
+                "validation_warning_count": 0,
+            },
+        }
+
+        self._save()
+
+    def record(self, result: MovieReviewResult) -> None:
+        """Persist a completed scenario immediately."""
+
+        if self.report["status"] != "running":
+            raise RuntimeError(
+                "Cannot record results after experiment completion."
+            )
+
+        expected_scenario = len(self.results) + 1
+
+        if result.scenario != expected_scenario:
+            raise ValueError(
+                "Movie review scenario sequence mismatch."
+            )
+
+        self.results.append(result)
+
+        self.report["results"] = [
+            asdict(item) for item in self.results
+        ]
+
+        self.report["summary"]["completed_scenarios"] = (
+            len(self.results)
+        )
+
+        self.report["summary"]["validation_warning_count"] = sum(
+            bool(item.validation_issues)
+            for item in self.results
+        )
+
+        self._save()
+
+    def complete(self) -> None:
+        """Mark a successful experiment as completed."""
+
+        if self.report["status"] != "running":
+            raise RuntimeError("Experiment is no longer running.")
+
+        self.report["status"] = "completed"
+        self.report["finished_at_utc"] = _utc_now()
+
+        self._save()
+
+    def fail(self, error: Exception) -> None:
+        """Preserve results and record the failure type."""
+
+        self.report["status"] = "failed"
+        self.report["finished_at_utc"] = _utc_now()
+        self.report["error_type"] = type(error).__name__
+
+        self._save()
+
+    def _save(self) -> None:
+        """Write the JSON report using atomic replacement."""
+
+        temporary_path = self.file_path.with_suffix(
+            ".json.tmp"
+        )
+
+        temporary_path.write_text(
+            json.dumps(
+                self.report,
+                indent=2,
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
 
