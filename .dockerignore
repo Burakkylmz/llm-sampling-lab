@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Git and IDE
+.git/
+.vscode/
+.idea/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local experiment outputs
+results/
+
+# Development files
+tests/
+dist/
+*.egg-info/
+
+# Secrets and local environment
+.env
+.env.*

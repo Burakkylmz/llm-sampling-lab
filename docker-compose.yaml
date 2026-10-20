@@ -1,0 +1,14 @@
+﻿services:
+  sampling-lab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: llm-sampling-lab:phase6
+    working_dir: /app
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY-}
+      MPLBACKEND: Agg
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./results:/app/results
+      - ./settings.toml:/app/settings.toml:ro
