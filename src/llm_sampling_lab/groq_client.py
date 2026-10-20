@@ -54,5 +54,3 @@ def generate_response(
         )
 
     return content
-
-

@@ -115,5 +115,3 @@ def test_missing_required_field(section, field):
         match=expected_error.replace(".", r"\."),
     ):
         validate_settings(settings)
-
-

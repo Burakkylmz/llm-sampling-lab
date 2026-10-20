@@ -40,4 +40,3 @@ def test_invalid_sample_indices(tmp_path):
             samples=[0, 1, 5],
             output_path=tmp_path / "invalid.png",
         )
-

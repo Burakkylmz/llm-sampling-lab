@@ -226,4 +226,3 @@ def test_top_p_experiment_cli(
         f"Repetitions: {expected_repetitions}"
         in captured.out
     )
-
