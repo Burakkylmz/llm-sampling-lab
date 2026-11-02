@@ -1,16 +1,26 @@
 
 import argparse
+import os
 import sys
 import tomllib
-from llm_sampling_lab.results import ExperimentRecorder
+
+from contextlib import contextmanager
+from collections.abc import Iterator
 from typing import Any, Literal
-from llm_sampling_lab.simulator import run_simulation_cli
 
 from groq import (
-    APIConnectionError,
-    APIStatusError,
-    AuthenticationError,
-    RateLimitError,
+    APIConnectionError as GroqConnectionError,
+    APIStatusError as GroqStatusError,
+    AuthenticationError as GroqAuthenticationError,
+    RateLimitError as GroqRateLimitError,
+)
+
+from openai import (
+    OpenAI,
+    APIConnectionError as OpenAIConnectionError,
+    APIStatusError as OpenAIStatusError,
+    AuthenticationError as OpenAIAuthenticationError,
+    RateLimitError as OpenAIRateLimitError,
 )
 
 from llm_sampling_lab.config import (
@@ -18,23 +28,40 @@ from llm_sampling_lab.config import (
     validate_settings,
 )
 
+from llm_sampling_lab.domain.models import (
+    GenerationRequest,
+    SamplingResult,
+)
+
 from llm_sampling_lab.groq_client import (
     create_groq_client,
     generate_response,
 )
 
-from llm_sampling_lab.experiments import (
-    SamplingResult,
-    run_temperature_experiment,
-    run_top_p_experiment,
-)
 from llm_sampling_lab.movie_reviews import (
     DEFAULT_MOVIE,
     DEFAULT_SCENARIOS,
     run_movie_review_experiment,
 )
 
-from llm_sampling_lab.results import MovieReviewRecorder
+from llm_sampling_lab.providers.base import BaseProvider
+
+from llm_sampling_lab.providers.factory import (
+    build_provider_registry,
+    create_provider,
+)
+
+from llm_sampling_lab.results import (
+    ExperimentRecorder,
+    MovieReviewRecorder,
+)
+
+from llm_sampling_lab.services.experiment_service import (
+    ExperimentService,
+)
+
+from llm_sampling_lab.simulator import run_simulation_cli
+
 
 SAMPLING_PROMPT = (
     "Create one short and memorable advertising slogan "
@@ -42,8 +69,68 @@ SAMPLING_PROMPT = (
 )
 
 
+@contextmanager
+def provider_session(
+    name: str,
+) -> Iterator[BaseProvider]:
+    """Create and manage a provider for one CLI operation."""
+
+    if name == "groq":
+        with create_groq_client() as client:
+            yield create_provider(
+                "groq",
+                groq_client=client,
+            )
+
+    elif name == "openai":
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY is missing or empty."
+            )
+
+        with OpenAI(
+            api_key=api_key,
+            timeout=30.0,
+            max_retries=0,
+        ) as client:
+            yield create_provider(
+                "openai",
+                openai_client=client,
+            )
+
+    else:
+        raise ValueError(
+            f"Unsupported provider: {name}"
+        )
+
+
+def resolve_model(
+    settings: dict[str, Any],
+    provider_name: str,
+    model_override: str | None,
+) -> str:
+    """Resolve the selected model."""
+
+    if model_override is not None:
+        model = model_override.strip()
+
+        if not model:
+            raise ValueError("Model cannot be empty.")
+
+        return model
+
+    if provider_name == "groq":
+        return settings["groq"]["model"]
+
+    raise ValueError(
+        f"--model is required for provider '{provider_name}'."
+    )
+
+
 def check_api(model: str) -> None:
-    """Verify Groq API connectivity."""
+    """Preserve the existing Groq API check."""
 
     with create_groq_client() as client:
         response = generate_response(
@@ -55,15 +142,33 @@ def check_api(model: str) -> None:
     print(f"Groq API response: {response}")
 
 
+def check_provider_api(
+    provider_name: str,
+    model: str,
+) -> None:
+    """Check connectivity through the provider abstraction."""
+
+    with provider_session(provider_name) as provider:
+        response = provider.generate(
+            GenerationRequest(
+                model=model,
+                prompt="Reply with exactly: Connection successful",
+            )
+        )
+
+    print(
+        f"{provider_name} API response: {response.text}"
+    )
+
+
 def _display_experiment_results(
     results: list[SamplingResult],
     parameter: Literal["temperature", "top_p"],
     values: list[float],
 ) -> None:
-    """Display grouped sampling results and diversity metrics."""
+    """Display experiment responses and diversity metrics."""
 
     for value in values:
-
         group = [
             result
             for result in results
@@ -74,11 +179,15 @@ def _display_experiment_results(
             )
         ]
 
-        responses = [result.response for result in group]
+        responses = [
+            result.response for result in group
+        ]
 
         total = len(responses)
         unique_count = len(set(responses))
-        unique_ratio = unique_count / total if total else 0.0
+        unique_ratio = (
+            unique_count / total if total else 0.0
+        )
 
         print("\n" + "=" * 60)
 
@@ -87,7 +196,6 @@ def _display_experiment_results(
 
             if group:
                 print(f"TOP-P: {group[0].top_p}")
-
         else:
             print(f"TOP-P: {value}")
 
@@ -97,25 +205,37 @@ def _display_experiment_results(
         print("=" * 60)
 
         for result in group:
-            print(f"{result.repetition}. {result.response}")
+            print(
+                f"{result.repetition}. {result.response}"
+            )
 
         print("-" * 60)
         print(f"Total Responses: {total}")
         print(f"Unique Responses: {unique_count}")
-        print(f"Unique Response Ratio: {unique_ratio:.2f}")
-
+        print(
+            f"Unique Response Ratio: {unique_ratio:.2f}"
+        )
 
 
 def run_temperature_cli(
     settings: dict[str, Any],
     repetitions: int,
+    provider_name: str = "groq",
+    model: str | None = None,
 ) -> None:
-    """Run temperature experiments with persistent JSON reporting."""
+    """Run temperature experiments with a selected provider."""
 
     experiment_settings = settings["temperature"]
 
+    selected_model = resolve_model(
+        settings,
+        provider_name,
+        model,
+    )
+
     recorder = ExperimentRecorder(
-        model=settings["groq"]["model"],
+        model=selected_model,
+        provider=provider_name,
         prompt=SAMPLING_PROMPT,
         experiment_type="temperature",
         parameter_values=experiment_settings["values"],
@@ -125,12 +245,15 @@ def run_temperature_cli(
     )
 
     try:
-        with create_groq_client() as client:
-            results = run_temperature_experiment(
-                client=client,
-                model=settings["groq"]["model"],
+        with provider_session(provider_name) as provider:
+            service = ExperimentService(
+                provider=provider,
+                model=selected_model,
+            )
+
+            results = service.run_temperature(
                 prompt=SAMPLING_PROMPT,
-                temperature_values=experiment_settings["values"],
+                temperatures=experiment_settings["values"],
                 top_p=experiment_settings["top_p"],
                 repetitions=repetitions,
                 on_result=recorder.record,
@@ -154,13 +277,22 @@ def run_temperature_cli(
 def run_top_p_cli(
     settings: dict[str, Any],
     repetitions: int,
+    provider_name: str = "groq",
+    model: str | None = None,
 ) -> None:
-    """Run top-p experiments with persistent JSON reporting."""
+    """Run top-p experiments with a selected provider."""
 
     experiment_settings = settings["top_p"]
 
+    selected_model = resolve_model(
+        settings,
+        provider_name,
+        model,
+    )
+
     recorder = ExperimentRecorder(
-        model=settings["groq"]["model"],
+        model=selected_model,
+        provider=provider_name,
         prompt=SAMPLING_PROMPT,
         experiment_type="top_p",
         parameter_values=experiment_settings["values"],
@@ -170,10 +302,13 @@ def run_top_p_cli(
     )
 
     try:
-        with create_groq_client() as client:
-            results = run_top_p_experiment(
-                client=client,
-                model=settings["groq"]["model"],
+        with provider_session(provider_name) as provider:
+            service = ExperimentService(
+                provider=provider,
+                model=selected_model,
+            )
+
+            results = service.run_top_p(
                 prompt=SAMPLING_PROMPT,
                 top_p_values=experiment_settings["values"],
                 temperature=experiment_settings["temperature"],
@@ -196,11 +331,10 @@ def run_top_p_cli(
     print(f"\nJSON Report: {recorder.file_path}")
 
 
-
 def run_movie_reviews_cli(
     settings: dict[str, Any],
 ) -> None:
-    """Run movie-review scenarios with persistent JSON reporting."""
+    """Run the existing Groq movie-review experiment."""
 
     model = settings["groq"]["model"]
 
@@ -244,18 +378,32 @@ def run_movie_reviews_cli(
                 + ", ".join(result.validation_issues)
             )
         else:
-            print("\nValidation: Passed structural checks")
+            print(
+                "\nValidation: Passed structural checks"
+            )
 
     print(f"\nJSON Report: {recorder.file_path}")
 
 
-
 def main() -> None:
-    """Entry point for the LLM Sampling Lab."""
+    """LLM Sampling Lab command-line entry point."""
 
-    # CLI argument parsing
     parser = argparse.ArgumentParser(
         description="LLM Sampling Laboratory"
+    )
+
+    parser.add_argument(
+        "--provider",
+        choices=build_provider_registry().available(),
+        default="groq",
+        help="LLM provider (default: groq).",
+    )
+
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Override the model identifier.",
     )
 
     action_group = parser.add_mutually_exclusive_group()
@@ -263,45 +411,51 @@ def main() -> None:
     action_group.add_argument(
         "--check-api",
         action="store_true",
-        help="Test Groq API connectivity.",
+        help="Check provider API connectivity.",
     )
 
     action_group.add_argument(
         "--experiment",
-        choices=["temperature", "top-p", "movie-reviews"],
+        choices=[
+            "temperature",
+            "top-p",
+            "movie-reviews",
+        ],
         help="Select a sampling experiment.",
+    )
+
+    action_group.add_argument(
+        "--simulate",
+        choices=[
+            "temperature",
+            "top-k",
+            "top-p",
+        ],
+        help="Run an offline simulation.",
     )
 
     parser.add_argument(
         "--repetitions",
         type=int,
         default=None,
-        help="Override configured experiment repetitions.",
-    )
-
-    action_group.add_argument(
-        "--simulate",
-        choices=["temperature", "top-k", "top-p"],
-        help="Run an offline sampling simulation.",
+        help="Override experiment repetitions.",
     )
 
     parser.add_argument(
         "--samples",
         type=int,
         default=None,
-        help="Number of token samples (default: 10000).",
+        help="Offline sample count (default: 10000).",
     )
 
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
-        help="Random seed (default: 42).",
+        help="Offline random seed (default: 42).",
     )
 
-
     args = parser.parse_args()
-
 
     if not args.simulate and (
         args.samples is not None
@@ -321,13 +475,14 @@ def main() -> None:
             "--seed must be non-negative."
         )
 
-
-    # CLI argument validation
     if args.repetitions is not None:
-
-        if args.experiment not in ("temperature", "top-p"):
+        if args.experiment not in (
+            "temperature",
+            "top-p",
+        ):
             parser.error(
-                "--repetitions requires --experiment."
+                "--repetitions requires a temperature "
+                "or top-p experiment."
             )
 
         if args.repetitions < 1:
@@ -335,46 +490,100 @@ def main() -> None:
                 "--repetitions must be a positive integer."
             )
 
+    if args.simulate and (
+        args.provider != "groq"
+        or args.model is not None
+    ):
+        parser.error(
+            "Offline simulations do not use "
+            "--provider or --model."
+        )
+
+    if (
+        args.experiment == "movie-reviews"
+        and args.provider != "groq"
+    ):
+        parser.error(
+            "Movie reviews currently support Groq only."
+        )
+
+    if (
+        args.provider == "openai"
+        and args.model is None
+        and not args.simulate
+    ):
+        parser.error(
+            "--provider openai requires --model."
+        )
+
+    if args.experiment == "movie-reviews":
+        if args.provider != "groq":
+            parser.error(
+                "Movie reviews currently support Groq only."
+            )
+
+        if args.model is not None:
+            parser.error(
+                "Movie reviews currently use the configured "
+                "Groq model; --model is not supported."
+            )
+            
     print("LLM Sampling Lab")
     print("----------------")
 
     try:
-        # Load and validate configuration
         settings = load_settings()
         validate_settings(settings)
 
-        # Resolve effective repetitions
-        effective_repetitions = (
+        selected_model = resolve_model(
+            settings,
+            args.provider,
+            args.model,
+        )
+
+        repetitions = (
             args.repetitions
             if args.repetitions is not None
             else settings["experiments"]["repetitions"]
         )
 
         print("Configuration loaded successfully.")
-        print(f"Model: {settings['groq']['model']}")
+        print(f"Provider: {args.provider}")
+        print(f"Model: {selected_model}")
 
         if args.experiment in ("temperature", "top-p"):
-            print(f"Repetitions: {effective_repetitions}")
+            print(f"Repetitions: {repetitions}")
 
-        # Command routing
         if args.check_api:
-            check_api(settings["groq"]["model"])
+            if args.provider == "groq":
+                check_api(selected_model)
+            else:
+                check_provider_api(
+                    args.provider,
+                    selected_model,
+                )
 
         elif args.experiment == "temperature":
             run_temperature_cli(
                 settings=settings,
-                repetitions=effective_repetitions,
+                repetitions=repetitions,
+                provider_name=args.provider,
+                model=selected_model,
             )
 
         elif args.experiment == "top-p":
             run_top_p_cli(
                 settings=settings,
-                repetitions=effective_repetitions,
+                repetitions=repetitions,
+                provider_name=args.provider,
+                model=selected_model,
             )
+
         elif args.experiment == "movie-reviews":
             run_movie_reviews_cli(
                 settings=settings,
             )
+
         elif args.simulate:
             run_simulation_cli(
                 settings=settings,
@@ -391,37 +600,46 @@ def main() -> None:
                 ),
             )
 
-
-    # Groq API error handling
-    except AuthenticationError:
+    except (
+        GroqAuthenticationError,
+        OpenAIAuthenticationError,
+    ):
         print(
-            "API error: Invalid Groq API key.",
+            "API error: Invalid API key.",
             file=sys.stderr,
         )
         raise SystemExit(1) from None
 
-    except RateLimitError:
+    except (
+        GroqRateLimitError,
+        OpenAIRateLimitError,
+    ):
         print(
-            "API error: Groq rate limit exceeded.",
+            "API error: Rate limit exceeded.",
             file=sys.stderr,
         )
         raise SystemExit(1) from None
 
-    except APIConnectionError:
+    except (
+        GroqConnectionError,
+        OpenAIConnectionError,
+    ):
         print(
-            "API error: Unable to connect to Groq.",
+            "API error: Connection failed.",
             file=sys.stderr,
         )
         raise SystemExit(1) from None
 
-    except APIStatusError as exc:
+    except (
+        GroqStatusError,
+        OpenAIStatusError,
+    ) as exc:
         print(
             f"API error: HTTP {exc.status_code}",
             file=sys.stderr,
         )
         raise SystemExit(1) from None
 
-    # Configuration and response error handling
     except (
         FileNotFoundError,
         ValueError,

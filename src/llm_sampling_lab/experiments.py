@@ -1,31 +1,79 @@
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from groq import Groq
-
+from llm_sampling_lab.domain.models import (
+    GenerationRequest,
+    GenerationResponse,
+    SamplingResult,
+)
 from llm_sampling_lab.groq_client import generate_response
+from llm_sampling_lab.providers.base import BaseProvider
+from llm_sampling_lab.providers.capabilities import (
+    ModelCapabilities,
+    SupportStatus,
+)
+from llm_sampling_lab.services.experiment_service import (
+    ExperimentService,
+)
 
 
 SamplingParameter = Literal["temperature", "top_p"]
+ResultCallback = Callable[[SamplingResult], None]
 
-ResultCallback = Callable[["SamplingResult"], None]
 
+class _LegacyGroqAdapter(BaseProvider):
+    """
+    Compatibility adapter for the existing Groq CLI.
 
-@dataclass(frozen=True)
-class SamplingResult:
-    """Store a single sampling experiment result."""
+    Preserves the original generate_response interface.
+    This is not the model capability discovery system.
+    """
 
-    experiment: str
-    temperature: float
-    top_p: float
-    repetition: int
-    response: str
+    def __init__(
+        self,
+        client: Any,
+        generator: Callable[..., str],
+    ) -> None:
+        self._client = client
+        self._generator = generator
+
+    def get_capabilities(
+        self,
+        model: str,
+    ) -> ModelCapabilities:
+        # Preserve the old CLI's parameter behavior.
+        # Actual model capabilities are not inferred here.
+        return ModelCapabilities(
+            provider="groq-legacy",
+            model=model,
+            temperature=SupportStatus.SUPPORTED,
+            top_p=SupportStatus.SUPPORTED,
+            top_k=SupportStatus.UNSUPPORTED,
+        )
+
+    def _generate(
+        self,
+        request: GenerationRequest,
+    ) -> GenerationResponse:
+
+        text = self._generator(
+            client=self._client,
+            model=request.model,
+            prompt=request.prompt,
+            temperature=request.temperature,
+            top_p=request.top_p,
+        )
+
+        return GenerationResponse(
+            provider="groq",
+            model=request.model,
+            text=text,
+        )
 
 
 def _run_experiment(
-    client: Groq,
+    client: Any,
     model: str,
     prompt: str,
     parameter: SamplingParameter,
@@ -34,50 +82,43 @@ def _run_experiment(
     repetitions: int,
     on_result: ResultCallback | None = None,
 ) -> list[SamplingResult]:
-    """Execute sampling experiments with one varying parameter."""
+    """Backward-compatible entry point."""
 
-    results: list[SamplingResult] = []
+    provider = _LegacyGroqAdapter(
+        client=client,
+        generator=generate_response,
+    )
 
-    for value in values:
-        for repetition in range(1, repetitions + 1):
+    service = ExperimentService(
+        provider=provider,
+        model=model,
+    )
 
-            temperature = (
-                value if parameter == "temperature"
-                else fixed_value
-            )
+    if parameter == "temperature":
+        return service.run_temperature(
+            prompt=prompt,
+            temperatures=values,
+            top_p=fixed_value,
+            repetitions=repetitions,
+            on_result=on_result,
+        )
 
-            top_p = (
-                value if parameter == "top_p"
-                else fixed_value
-            )
+    if parameter == "top_p":
+        return service.run_top_p(
+            prompt=prompt,
+            top_p_values=values,
+            temperature=fixed_value,
+            repetitions=repetitions,
+            on_result=on_result,
+        )
 
-            response = generate_response(
-                client=client,
-                model=model,
-                prompt=prompt,
-                temperature=temperature,
-                top_p=top_p,
-            )
-
-            result = SamplingResult(
-                experiment=parameter,
-                temperature=temperature,
-                top_p=top_p,
-                repetition=repetition,
-                response=response,
-            )
-
-            results.append(result)
-
-            # Persist each result immediately when a callback exists.
-            if on_result is not None:
-                on_result(result)
-
-    return results
+    raise ValueError(
+        f"Unsupported experiment parameter: {parameter}"
+    )
 
 
 def run_temperature_experiment(
-    client: Groq,
+    client: Any,
     model: str,
     prompt: str,
     temperature_values: list[float],
@@ -85,7 +126,6 @@ def run_temperature_experiment(
     repetitions: int,
     on_result: ResultCallback | None = None,
 ) -> list[SamplingResult]:
-    """Run temperature experiments with a fixed top-p."""
 
     return _run_experiment(
         client=client,
@@ -100,7 +140,7 @@ def run_temperature_experiment(
 
 
 def run_top_p_experiment(
-    client: Groq,
+    client: Any,
     model: str,
     prompt: str,
     top_p_values: list[float],
@@ -108,7 +148,6 @@ def run_top_p_experiment(
     repetitions: int,
     on_result: ResultCallback | None = None,
 ) -> list[SamplingResult]:
-    """Run top-p experiments with a fixed temperature."""
 
     return _run_experiment(
         client=client,

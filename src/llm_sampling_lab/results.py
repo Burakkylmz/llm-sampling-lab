@@ -31,6 +31,7 @@ class ExperimentRecorder:
         fixed_value: float,
         repetitions: int,
         output_dir: str | Path = "results",
+        provider: str = "groq",
     ) -> None:
 
         if experiment_type not in ("temperature", "top_p"):
@@ -63,6 +64,7 @@ class ExperimentRecorder:
             "schema_version": 1,
             "experiment_id": self.experiment_id,
             "experiment_type": experiment_type,
+            "provider": provider,
             "model": model,
             "prompt": prompt,
             "parameters": {

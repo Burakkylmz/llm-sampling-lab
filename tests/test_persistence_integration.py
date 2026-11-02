@@ -4,12 +4,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from llm_sampling_lab import cli, experiments
+from llm_sampling_lab import cli
+
+from llm_sampling_lab.domain.models import (
+    GenerationResponse,
+)
 
 
 @pytest.fixture
 def experiment_settings():
-    """Provide deterministic sampling configuration."""
+    """Provide deterministic experiment settings."""
 
     return {
         "groq": {
@@ -26,6 +30,44 @@ def experiment_settings():
     }
 
 
+
+def mock_provider_for_cli(
+    monkeypatch,
+    mock_generate,
+):
+    """Mock provider creation through the central factory."""
+
+    provider = MagicMock()
+
+    def fake_generate(request):
+        text = mock_generate()
+
+        return GenerationResponse(
+            provider="groq",
+            model=request.model,
+            text=text,
+        )
+
+    provider.generate.side_effect = fake_generate
+
+    def fake_create_provider(
+        name,
+        groq_client=None,
+    ):
+        assert name == "groq"
+        assert groq_client is not None
+
+        return provider
+
+    monkeypatch.setattr(
+        cli,
+        "create_provider",
+        fake_create_provider,
+    )
+
+    return provider
+
+
 @pytest.mark.parametrize(
     "runner_name, directory",
     [
@@ -40,10 +82,11 @@ def test_experiment_json_persistence(
     runner_name,
     directory,
 ):
-    """Both experiments should save completed JSON reports."""
+    """Both experiments must persist completed JSON reports."""
 
     monkeypatch.chdir(tmp_path)
 
+    # Avoid real API requests.
     monkeypatch.setattr(
         cli,
         "create_groq_client",
@@ -59,9 +102,8 @@ def test_experiment_json_persistence(
         ]
     )
 
-    monkeypatch.setattr(
-        experiments,
-        "generate_response",
+    provider = mock_provider_for_cli(
+        monkeypatch,
         mock_generate,
     )
 
@@ -72,23 +114,53 @@ def test_experiment_json_persistence(
         repetitions=2,
     )
 
+    # Verify provider execution.
+    assert provider.generate.call_count == 4
+    assert mock_generate.call_count == 4
+
+    # Verify JSON file creation.
     report_files = list(
-        (tmp_path / "results" / directory).glob("*.json")
+        (tmp_path / "results" / directory).glob(
+            "*.json"
+        )
     )
 
     assert len(report_files) == 1
-    assert mock_generate.call_count == 4
 
     data = json.loads(
-        report_files[0].read_text(encoding="utf-8")
+        report_files[0].read_text(
+            encoding="utf-8"
+        )
     )
 
+    # Verify experiment metadata.
     assert data["status"] == "completed"
     assert data["experiment_type"] == directory
     assert len(data["results"]) == 4
 
-    assert data["summary"][0]["unique_response_ratio"] == 0.5
-    assert data["summary"][1]["unique_response_ratio"] == 1.0
+    # Verify diversity metrics.
+    assert (
+        data["summary"][0]["unique_response_ratio"]
+        == 0.5
+    )
+
+    assert (
+        data["summary"][1]["unique_response_ratio"]
+        == 1.0
+    )
+
+    # Verify result ordering.
+    responses = [
+        item["response"]
+        for item in data["results"]
+    ]
+
+    assert responses == [
+        "Slogan A",
+        "Slogan A",
+        "Slogan B",
+        "Slogan C",
+    ]
 
 
 def test_api_failure_preserves_partial_results(
@@ -96,10 +168,11 @@ def test_api_failure_preserves_partial_results(
     tmp_path,
     experiment_settings,
 ):
-    """Earlier successful responses must survive an API failure."""
+    """An API failure must preserve successful prior results."""
 
     monkeypatch.chdir(tmp_path)
 
+    # Mock Groq client creation.
     monkeypatch.setattr(
         cli,
         "create_groq_client",
@@ -113,12 +186,12 @@ def test_api_failure_preserves_partial_results(
         ]
     )
 
-    monkeypatch.setattr(
-        experiments,
-        "generate_response",
+    provider = mock_provider_for_cli(
+        monkeypatch,
         mock_generate,
     )
 
+    # The second generation request fails.
     with pytest.raises(
         RuntimeError,
         match="Simulated API failure",
@@ -128,18 +201,32 @@ def test_api_failure_preserves_partial_results(
             repetitions=2,
         )
 
+    assert provider.generate.call_count == 2
+
+    # Verify the report still exists.
     report_files = list(
-        (tmp_path / "results" / "temperature").glob("*.json")
+        (tmp_path / "results" / "temperature").glob(
+            "*.json"
+        )
     )
 
     assert len(report_files) == 1
 
     data = json.loads(
-        report_files[0].read_text(encoding="utf-8")
+        report_files[0].read_text(
+            encoding="utf-8"
+        )
     )
 
+    # Failure status must be recorded.
     assert data["status"] == "failed"
+
     assert data["error_type"] == "RuntimeError"
 
+    # The successful response must not be lost.
     assert len(data["results"]) == 1
-    assert data["results"][0]["response"] == "Saved response"
+
+    assert (
+        data["results"][0]["response"]
+        == "Saved response"
+    )
