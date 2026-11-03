@@ -24,6 +24,7 @@ class GenerationResponse:
 
 
 
+
 @dataclass(frozen=True)
 class SamplingResult:
     """Provider-independent sampling experiment result."""
@@ -33,3 +34,4 @@ class SamplingResult:
     top_p: float
     repetition: int
     response: str
+    top_k: int | None = None

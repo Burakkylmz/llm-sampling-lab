@@ -26,15 +26,20 @@ class ExperimentRecorder:
         model: str,
         prompt: str,
         experiment_type: str,
-        parameter_values: list[float],
+        parameter_values: list[float | int],
         fixed_parameter: str,
         fixed_value: float,
         repetitions: int,
         output_dir: str | Path = "results",
         provider: str = "groq",
+        extra_fixed_parameters: dict[str, float] | None = None,
     ) -> None:
 
-        if experiment_type not in ("temperature", "top_p"):
+        if experiment_type not in (
+            "temperature",
+            "top_p",
+            "top_k",
+        ):
             raise ValueError(
                 f"Unsupported experiment type: {experiment_type}"
             )
@@ -72,6 +77,7 @@ class ExperimentRecorder:
                 "values": self.parameter_values,
                 "fixed": {
                     fixed_parameter: fixed_value,
+                    **(extra_fixed_parameters or {}),
                 },
                 "repetitions": repetitions,
             },
@@ -136,9 +142,18 @@ class ExperimentRecorder:
                 result
                 for result in self.results
                 if (
-                    result.temperature == value
-                    if self.experiment_type == "temperature"
-                    else result.top_p == value
+                    (
+                        self.experiment_type == "temperature"
+                        and result.temperature == value
+                    )
+                    or (
+                        self.experiment_type == "top_p"
+                        and result.top_p == value
+                    )
+                    or (
+                        self.experiment_type == "top_k"
+                        and result.top_k == value
+                    )
                 )
             ]
 

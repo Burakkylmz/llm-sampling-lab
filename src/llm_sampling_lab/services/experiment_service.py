@@ -129,3 +129,67 @@ class ExperimentService:
             repetitions=repetitions,
             on_result=on_result,
         )
+    
+    def run_top_k(
+        self,
+        *,
+        prompt: str,
+        top_k_values: list[int],
+        temperature: float,
+        top_p: float,
+        repetitions: int,
+        on_result: ResultCallback | None = None,
+    ) -> list[SamplingResult]:
+        """Run native Top-k experiments."""
+
+        if not top_k_values:
+            raise ValueError(
+                "Top-k values cannot be empty."
+            )
+
+        if any(
+            type(value) is not int or value < 1
+            for value in top_k_values
+        ):
+            raise ValueError(
+                "Top-k values must be positive integers."
+            )
+
+        if (
+            type(repetitions) is not int
+            or repetitions < 1
+        ):
+            raise ValueError(
+                "repetitions must be a positive integer."
+            )
+
+        results: list[SamplingResult] = []
+
+        for top_k in top_k_values:
+            for repetition in range(1, repetitions + 1):
+                request = GenerationRequest(
+                    model=self.model,
+                    prompt=prompt,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    max_output_tokens=self.max_output_tokens,
+                )
+
+                response = self.provider.generate(request)
+
+                result = SamplingResult(
+                    experiment="top_k",
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    repetition=repetition,
+                    response=response.text,
+                )
+
+                results.append(result)
+
+                if on_result is not None:
+                    on_result(result)
+
+        return results

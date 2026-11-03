@@ -13,6 +13,13 @@ from llm_sampling_lab.providers.capabilities import (
     ModelCapabilities,
     SupportStatus,
 )
+from llm_sampling_lab.providers.model_catalog import (
+    get_model_capabilities,
+)
+from llm_sampling_lab.providers.model_discovery import (
+    DiscoveredModel,
+    parse_model_response,
+)
 
 
 class OpenAIProvider(BaseProvider):
@@ -31,24 +38,38 @@ class OpenAIProvider(BaseProvider):
     ) -> None:
         self._client = client
 
+    def discover_models(self) -> list[DiscoveredModel]:
+        """Retrieve models from the live OpenAI API."""
+
+        if self._client is not None:
+            response = self._client.models.list()
+        else:
+            api_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+            if not api_key:
+                raise ValueError(
+                    "OPENAI_API_KEY is missing or empty."
+                )
+
+            with OpenAI(
+                api_key=api_key,
+                timeout=30.0,
+                max_retries=0,
+            ) as client:
+                response = client.models.list()
+
+        return parse_model_response(
+            provider=self.name,
+            response=response,
+        )
+
     def get_capabilities(
         self,
         model: str,
     ) -> ModelCapabilities:
-        supported = model in self.SAMPLING_MODELS
-
-        status = (
-            SupportStatus.SUPPORTED
-            if supported
-            else SupportStatus.UNKNOWN
-        )
-
-        return ModelCapabilities(
+        return get_model_capabilities(
             provider=self.name,
             model=model,
-            temperature=status,
-            top_p=status,
-            top_k=SupportStatus.UNSUPPORTED,
         )
 
     def _generate(

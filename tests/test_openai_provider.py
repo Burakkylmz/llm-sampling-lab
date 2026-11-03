@@ -138,7 +138,11 @@ def test_empty_response(mock_client):
 def test_factory_registers_openai(mock_client):
     registry = build_provider_registry()
 
-    assert registry.available() == ["groq", "openai"]
+    assert registry.available() == [
+        "groq",
+        "ollama",
+        "openai",
+    ]
 
     provider = create_provider(
         "openai",

@@ -13,6 +13,13 @@ from llm_sampling_lab.providers.capabilities import (
     ModelCapabilities,
     SupportStatus,
 )
+from llm_sampling_lab.providers.model_catalog import (
+    get_model_capabilities,
+)
+from llm_sampling_lab.providers.model_discovery import (
+    DiscoveredModel,
+    parse_model_response,
+)
 
 
 class GroqProvider(BaseProvider):
@@ -30,27 +37,28 @@ class GroqProvider(BaseProvider):
         client: Groq | None = None,
     ) -> None:
         self._client = client
+    
+    def discover_models(self) -> list[DiscoveredModel]:
+        """Retrieve models from the live Groq API."""
+
+        if self._client is not None:
+            response = self._client.models.list()
+        else:
+            with create_groq_client() as client:
+                response = client.models.list()
+
+        return parse_model_response(
+            provider=self.name,
+            response=response,
+        )
 
     def get_capabilities(
         self,
         model: str,
     ) -> ModelCapabilities:
-        """Return known sampling capabilities."""
-
-        verified = model in self.VERIFIED_MODELS
-
-        status = (
-            SupportStatus.SUPPORTED
-            if verified
-            else SupportStatus.UNKNOWN
-        )
-
-        return ModelCapabilities(
+        return get_model_capabilities(
             provider=self.name,
             model=model,
-            temperature=status,
-            top_p=status,
-            top_k=SupportStatus.UNSUPPORTED,
         )
 
     def _generate(

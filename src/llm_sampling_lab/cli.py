@@ -62,18 +62,36 @@ from llm_sampling_lab.services.experiment_service import (
 
 from llm_sampling_lab.simulator import run_simulation_cli
 
+from llm_sampling_lab.providers.model_catalog import (
+    get_model_metadata,
+    list_catalog_models,
+)
+
+from llm_sampling_lab.providers.model_discovery import (
+    SupportsModelDiscovery,
+)
+
+from llm_sampling_lab.providers.model_catalog import (
+    list_catalog_models,
+)
+
+from ollama import Client as OllamaClient
+
 
 SAMPLING_PROMPT = (
     "Create one short and memorable advertising slogan "
     "for an electric car brand. Return only the slogan."
 )
+TOP_K_VALUES = [1, 20, 40]
+TOP_K_TEMPERATURE = 0.8
+TOP_K_TOP_P = 0.9
 
 
 @contextmanager
 def provider_session(
     name: str,
 ) -> Iterator[BaseProvider]:
-    """Create and manage a provider for one CLI operation."""
+    """Create and manage a provider for one operation."""
 
     if name == "groq":
         with create_groq_client() as client:
@@ -100,10 +118,21 @@ def provider_session(
                 openai_client=client,
             )
 
+    elif name == "ollama":
+        with OllamaClient(
+            host="http://127.0.0.1:11434",
+            timeout=120.0,
+        ) as client:
+            yield create_provider(
+                "ollama",
+                ollama_client=client,
+            )
+
     else:
         raise ValueError(
             f"Unsupported provider: {name}"
         )
+
 
 
 def resolve_model(
@@ -385,6 +414,223 @@ def run_movie_reviews_cli(
     print(f"\nJSON Report: {recorder.file_path}")
 
 
+def show_capabilities(
+    provider_name: str,
+    model: str,
+) -> None:
+    """Display model capabilities without calling an API."""
+
+    provider = create_provider(provider_name)
+    capabilities = provider.get_capabilities(model)
+
+    print("\nModel Capabilities")
+    print("=" * 50)
+    print(f"Provider: {capabilities.provider}")
+    print(f"Model: {capabilities.model}")
+    
+    metadata = get_model_metadata(
+        provider_name,
+        model,
+    )
+
+    print(f"Source: {metadata.source}")
+    print(
+        "Last verified: "
+        f"{metadata.last_verified or 'not recorded'}"
+    )
+    print(
+        "Live API verified: "
+        f"{metadata.live_verified}"
+    )
+
+    print("-" * 50)
+
+    for name in ("temperature", "top_p", "top_k"):
+        status = getattr(capabilities, name)
+        description = status.value
+
+        if status.value == "supported":
+            limits = capabilities.parameter_ranges.get(name)
+
+            if limits is not None:
+                left = (
+                    "[" if limits.minimum_inclusive else "("
+                )
+                right = (
+                    "]" if limits.maximum_inclusive else ")"
+                )
+                description += (
+                    f" | Range: {left}{limits.minimum}, "
+                    f"{limits.maximum}{right}"
+                )
+
+        print(f"{name}: {description}")
+
+
+def show_model_list(provider_name: str) -> None:
+    """List models registered in the local catalog."""
+
+    models = list_catalog_models(provider_name)
+
+    print(f"\nAvailable catalog models: {provider_name}")
+    print("=" * 50)
+
+    if not models:
+        print("No models registered.")
+        return
+
+    for model in models:
+        print(f"- {model}")
+
+    print("\nSource: Local static model catalog.")
+    print("This is not a live API model listing.")
+
+
+
+def discover_models_cli(provider_name: str) -> None:
+    """Display models returned by the provider API."""
+
+    with provider_session(provider_name) as provider:
+        if not isinstance(provider, SupportsModelDiscovery):
+            raise ValueError(
+                f"{provider_name} does not support model discovery."
+            )
+
+        models = provider.discover_models()
+
+    catalog_models = set(
+        list_catalog_models(provider_name)
+    )
+
+    print(f"\nLive models: {provider_name}")
+    print("=" * 60)
+
+    if not models:
+        print("The provider returned no models.")
+        return
+
+    for item in models:
+        catalog_status = (
+            "known"
+            if item.model_id in catalog_models
+            else "not in local catalog"
+        )
+
+        print(f"\nModel: {item.model_id}")
+        print(f"Owner: {item.owned_by or 'unknown'}")
+        print(f"Catalog: {catalog_status}")
+
+        if item.active is not None:
+            print(f"Active: {item.active}")
+
+    print(f"\nTotal models: {len(models)}")
+    print("Source: Live provider API")
+    print(
+        "Note: Model listing does not verify "
+        "sampling parameter support."
+    )
+
+
+
+def _display_top_k_results(
+    results: list[SamplingResult],
+    values: list[int],
+) -> None:
+    """Display Top-k response diversity."""
+
+    for top_k in values:
+        group = [
+            result
+            for result in results
+            if result.top_k == top_k
+        ]
+
+        responses = [
+            result.response
+            for result in group
+        ]
+
+        total = len(responses)
+        unique_count = len(set(responses))
+
+        ratio = unique_count / total if total else 0.0
+
+        print("\n" + "=" * 60)
+        print(f"TOP-K: {top_k}")
+        print(f"Total Responses: {total}")
+        print(f"Unique Responses: {unique_count}")
+        print(f"Unique Response Ratio: {ratio:.2f}")
+        print("=" * 60)
+
+        for result in group:
+            print(
+                f"{result.repetition}. {result.response}"
+            )
+
+
+def run_top_k_cli(
+    settings: dict[str, Any],
+    repetitions: int,
+    provider_name: str = "ollama",
+    model: str | None = None,
+) -> None:
+    """Run native Top-k experiments with Ollama."""
+
+    if provider_name != "ollama":
+        raise ValueError(
+            "Native Top-k experiments currently require Ollama."
+        )
+
+    selected_model = resolve_model(
+        settings,
+        provider_name,
+        model,
+    )
+
+    recorder = ExperimentRecorder(
+        model=selected_model,
+        provider=provider_name,
+        prompt=SAMPLING_PROMPT,
+        experiment_type="top_k",
+        parameter_values=TOP_K_VALUES,
+        fixed_parameter="temperature",
+        fixed_value=TOP_K_TEMPERATURE,
+        extra_fixed_parameters={
+            "top_p": TOP_K_TOP_P,
+        },
+        repetitions=repetitions,
+    )
+
+    try:
+        with provider_session(provider_name) as provider:
+            service = ExperimentService(
+                provider=provider,
+                model=selected_model,
+            )
+
+            results = service.run_top_k(
+                prompt=SAMPLING_PROMPT,
+                top_k_values=TOP_K_VALUES,
+                temperature=TOP_K_TEMPERATURE,
+                top_p=TOP_K_TOP_P,
+                repetitions=repetitions,
+                on_result=recorder.record,
+            )
+
+        recorder.complete()
+
+    except Exception as exc:
+        recorder.fail(exc)
+        raise
+
+    _display_top_k_results(
+        results=results,
+        values=TOP_K_VALUES,
+    )
+
+    print(f"\nJSON Report: {recorder.file_path}")
+
+
 def main() -> None:
     """LLM Sampling Lab command-line entry point."""
 
@@ -419,6 +665,7 @@ def main() -> None:
         choices=[
             "temperature",
             "top-p",
+            "top-k",
             "movie-reviews",
         ],
         help="Select a sampling experiment.",
@@ -432,6 +679,24 @@ def main() -> None:
             "top-p",
         ],
         help="Run an offline simulation.",
+    )
+
+    action_group.add_argument(
+        "--show-capabilities",
+        action="store_true",
+        help="Show model sampling capabilities.",
+    )
+
+    action_group.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List models in the local catalog.",
+    )
+
+    action_group.add_argument(
+        "--discover-models",
+        action="store_true",
+        help="List models using the live provider API.",
     )
 
     parser.add_argument(
@@ -457,6 +722,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if (
+        args.experiment == "top-k"
+        and args.provider != "ollama"
+    ):
+        parser.error(
+            "Native Top-k experiments currently require "
+            "--provider ollama."
+        )
+
     if not args.simulate and (
         args.samples is not None
         or args.seed is not None
@@ -479,10 +753,10 @@ def main() -> None:
         if args.experiment not in (
             "temperature",
             "top-p",
+            "top-k",
         ):
             parser.error(
-                "--repetitions requires a temperature "
-                "or top-p experiment."
+                "--repetitions requires a sampling experiment."
             )
 
         if args.repetitions < 1:
@@ -508,12 +782,24 @@ def main() -> None:
         )
 
     if (
-        args.provider == "openai"
+        args.provider in ("openai", "ollama")
         and args.model is None
         and not args.simulate
+        and not args.list_models
+        and not args.discover_models
     ):
         parser.error(
-            "--provider openai requires --model."
+            f"--provider {args.provider} requires --model."
+        )
+
+    if args.discover_models and args.model is not None:
+        parser.error(
+            "--discover-models does not accept --model."
+        )
+
+    if args.list_models and args.model is not None:
+        parser.error(
+            "--list-models does not accept --model."
         )
 
     if args.experiment == "movie-reviews":
@@ -535,6 +821,14 @@ def main() -> None:
         settings = load_settings()
         validate_settings(settings)
 
+        if args.list_models:
+            show_model_list(args.provider)
+            return
+
+        if args.discover_models:
+            discover_models_cli(args.provider)
+            return
+
         selected_model = resolve_model(
             settings,
             args.provider,
@@ -554,7 +848,12 @@ def main() -> None:
         if args.experiment in ("temperature", "top-p"):
             print(f"Repetitions: {repetitions}")
 
-        if args.check_api:
+        if args.show_capabilities:
+            show_capabilities(
+                provider_name=args.provider,
+                model=selected_model,
+            )
+        elif args.check_api:
             if args.provider == "groq":
                 check_api(selected_model)
             else:
@@ -573,6 +872,14 @@ def main() -> None:
 
         elif args.experiment == "top-p":
             run_top_p_cli(
+                settings=settings,
+                repetitions=repetitions,
+                provider_name=args.provider,
+                model=selected_model,
+            )
+
+        elif args.experiment == "top-k":
+            run_top_k_cli(
                 settings=settings,
                 repetitions=repetitions,
                 provider_name=args.provider,

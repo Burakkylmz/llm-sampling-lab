@@ -15,6 +15,7 @@ def test_registry_contains_groq():
 
     assert registry.available() == [
         "groq",
+        "ollama",
         "openai",
     ]
 
