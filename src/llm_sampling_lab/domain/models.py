@@ -10,6 +10,7 @@ class GenerationRequest:
     top_p: float | None = None
     top_k: int | None = None
     max_output_tokens: int = 256
+    seed: int | None = None
 
 
 @dataclass(frozen=True)
@@ -23,8 +24,6 @@ class GenerationResponse:
     output_tokens: int | None = None
 
 
-
-
 @dataclass(frozen=True)
 class SamplingResult:
     """Provider-independent sampling experiment result."""
@@ -35,3 +34,9 @@ class SamplingResult:
     repetition: int
     response: str
     top_k: int | None = None
+
+    # Benchmark measurements
+    latency_seconds: float | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    seed: int | None = None

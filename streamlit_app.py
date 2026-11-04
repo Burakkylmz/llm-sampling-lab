@@ -30,6 +30,13 @@ from llm_sampling_lab.services.analytics_service import (
     summarize_sampling_results,
     build_comparison_insights,
 )
+from llm_sampling_lab.services.performance_service import (
+    build_performance_rows,
+    summarize_performance_rows,
+)
+from llm_sampling_lab.services.reproducibility_service import (
+    summarize_reproducibility,
+)
 
 
 # ============================================================
@@ -103,6 +110,8 @@ def execute_experiment(
     prompt: str,
     repetitions: int,
     settings: dict,
+    warmup_requests: int = 0,
+    seed: int | None = None,
 ) -> tuple[list[SamplingResult], str]:
     """Execute and persist an LLM sampling experiment."""
 
@@ -160,6 +169,8 @@ def execute_experiment(
         fixed_value=fixed_value,
         extra_fixed_parameters=extra_fixed,
         repetitions=repetitions,
+        warmup_requests=warmup_requests,
+        seed=seed,
     )
 
     try:
@@ -167,6 +178,8 @@ def execute_experiment(
             service = ExperimentService(
                 provider=provider,
                 model=model,
+                warmup_requests=warmup_requests,
+                seed=seed,
             )
 
             if strategy == "temperature":
@@ -398,6 +411,44 @@ def render_sidebar(
                 )
 
         st.divider()
+        
+        st.subheader("Reproducibility Settings")
+
+        warmup_requests = st.selectbox(
+            "Warm-up requests",
+            options=[0, 1, 2, 3],
+            index=1 if provider == "ollama" else 0,
+            help=(
+                "Warm-up responses are excluded from "
+                "recorded benchmark results. "
+                "They still consume compute and, for "
+                "cloud providers, may incur API charges."
+            ),
+        )
+
+        use_fixed_seed = st.checkbox(
+            "Enable fixed seed (Ollama only)",
+            value=False,
+            disabled=provider != "ollama",
+        )
+
+        seed = None
+
+        if use_fixed_seed and provider == "ollama":
+            seed = int(
+                st.number_input(
+                    "Random seed",
+                    min_value=0,
+                    value=42,
+                    step=1,
+                )
+            )
+
+            st.warning(
+                "Fixed seed is intended for reproducibility "
+                "tests. Reusing it across repetitions may "
+                "reduce observed response diversity."
+            )
 
         run_button = st.button(
             "Run Experiment",
@@ -421,6 +472,8 @@ def render_sidebar(
         "repetitions": int(repetitions),
         "prompt": prompt,
         "run_button": run_button,
+        "warmup_requests": int(warmup_requests),
+        "seed": seed,
     }
 
 
@@ -769,6 +822,28 @@ def render_analytics_tab() -> None:
         "does not necessarily mean higher response quality."
     )
 
+    st.divider()
+    
+    st.markdown("### Reproducibility Analysis")
+
+    reproducibility = summarize_reproducibility(
+        results,
+        strategy,
+    )
+
+    st.dataframe(
+        pd.DataFrame(reproducibility),
+        hide_index=True,
+        width="stretch",
+    )
+
+    st.caption(
+        "Exact Match indicates that all recorded responses "
+        "for a parameter group are identical. "
+        "For controlled reproducibility experiments, "
+        "use a fixed seed with the same model and settings."
+    )
+
 
 # ============================================================
 # EXPERIMENT HANDLER
@@ -802,6 +877,8 @@ def handle_experiment_run(
                 prompt=config["prompt"].strip(),
                 repetitions=config["repetitions"],
                 settings=settings,
+                warmup_requests=config["warmup_requests"],
+                seed=config["seed"],
             )
 
         st.session_state["last_run"] = {
@@ -811,6 +888,8 @@ def handle_experiment_run(
             "prompt": config["prompt"].strip(),
             "results": results,
             "report_path": report_path,
+            "warmup_requests": config["warmup_requests"],
+            "seed": config["seed"],
         }
 
         st.success(
@@ -1432,6 +1511,268 @@ def render_comparison_insights(
         )
 
 
+
+def render_performance_tab() -> None:
+    """Visualize latency and token usage metrics."""
+
+    st.subheader("Performance Analytics")
+
+    st.caption(
+        "Analyze end-to-end generation latency and "
+        "provider-reported token usage."
+    )
+
+    source = st.radio(
+        "Data source",
+        ["Latest Run", "Saved JSON Report"],
+        horizontal=True,
+        key="performance_source",
+    )
+
+    if source == "Latest Run":
+        last_run = st.session_state.get("last_run")
+
+        if last_run is None:
+            st.info("Run an experiment first.")
+            return
+
+        results = last_run["results"]
+        strategy = last_run["strategy"]
+        model = last_run["model"]
+
+    else:
+        reports = [
+            report
+            for report in list_experiment_reports()
+            if report.get("status") == "completed"
+        ]
+
+        if not reports:
+            st.info("No completed reports available.")
+            return
+
+        selected = st.selectbox(
+            "Select saved experiment",
+            options=list(range(len(reports))),
+            format_func=lambda i: (
+                f"{str(reports[i].get('started_at_utc', ''))[:19]}"
+                f" | {reports[i].get('provider')}"
+                f" | {reports[i].get('model')}"
+                f" | {reports[i].get('experiment_type')}"
+            ),
+            key="performance_history_selection",
+        )
+
+        report = reports[selected]
+
+        results = report["results"]
+        strategy = report["experiment_type"]
+        model = report.get("model", "unknown")
+
+    st.caption(
+        f"Model: {model} | Strategy: {strategy}"
+    )
+
+    try:
+        rows = build_performance_rows(
+            results,
+            strategy,
+        )
+
+        summary_rows = summarize_performance_rows(rows)
+
+    except ValueError as exc:
+        st.error(f"Performance data error: {exc}")
+        return
+
+    if not rows:
+        st.info("No request records available.")
+        return
+
+    details_df = pd.DataFrame(rows)
+    summary_df = pd.DataFrame(summary_rows)
+
+    measured = details_df["Latency (s)"].dropna()
+
+    input_usage = details_df["Input Tokens"].dropna()
+    output_usage = details_df["Output Tokens"].dropna()
+
+    # ----------------------------------------------------
+    # SUMMARY METRICS
+    # ----------------------------------------------------
+
+    st.divider()
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Total Requests",
+            len(rows),
+            border=True,
+        )
+
+    with col2:
+        st.metric(
+            "Average Latency",
+            (
+                f"{measured.mean():.3f} s"
+                if not measured.empty
+                else "N/A"
+            ),
+            border=True,
+        )
+
+    with col3:
+        st.metric(
+            "Input Tokens (reported)",
+            (
+                f"{int(input_usage.sum()):,}"
+                if not input_usage.empty
+                else "N/A"
+            ),
+            border=True,
+        )
+
+    with col4:
+        st.metric(
+            "Output Tokens (reported)",
+            (
+                f"{int(output_usage.sum()):,}"
+                if not output_usage.empty
+                else "N/A"
+            ),
+            border=True,
+        )
+
+    if measured.empty:
+        st.info(
+            "This experiment has no recorded latency "
+            "measurements. Older JSON reports may not "
+            "contain benchmark fields."
+        )
+
+    if (
+        len(input_usage) < len(rows)
+        or len(output_usage) < len(rows)
+    ):
+        st.warning(
+            "Token usage is missing for some requests. "
+            "Displayed token totals include only "
+            "provider-reported values."
+        )
+
+    # ----------------------------------------------------
+    # GROUPED PERFORMANCE SUMMARY
+    # ----------------------------------------------------
+
+    st.divider()
+    st.markdown("### Performance by Sampling Parameter")
+
+    st.dataframe(
+        summary_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    chart_df = summary_df.copy()
+    chart_df["Parameter"] = (
+        chart_df["Parameter"].astype(str)
+    )
+    chart_df = chart_df.set_index("Parameter")
+
+    # ----------------------------------------------------
+    # LATENCY COMPARISON
+    # ----------------------------------------------------
+
+    st.markdown("### Average vs Median Latency")
+
+    latency_columns = [
+        "Average Latency (s)",
+        "Median Latency (s)",
+    ]
+
+    if chart_df[latency_columns].notna().any().any():
+        st.bar_chart(
+            chart_df[latency_columns],
+            stack=False,
+            sort=False,
+            width="stretch",
+        )
+    else:
+        st.info("No latency measurements to chart.")
+
+    # ----------------------------------------------------
+    # TOKEN USAGE
+    # ----------------------------------------------------
+
+    st.markdown("### Token Usage Comparison")
+
+    token_columns = [
+        "Recorded Input Tokens",
+        "Recorded Output Tokens",
+    ]
+
+    if chart_df[token_columns].notna().any().any():
+        st.bar_chart(
+            chart_df[token_columns],
+            stack=False,
+            sort=False,
+            width="stretch",
+        )
+    else:
+        st.info("No token usage data available.")
+
+    # ----------------------------------------------------
+    # INDIVIDUAL REQUEST LATENCY
+    # ----------------------------------------------------
+
+    st.markdown("### Request Latency Timeline")
+
+    timeline_df = details_df[
+        ["Request", "Latency (s)"]
+    ].copy()
+
+    timeline_df = timeline_df.dropna(
+        subset=["Latency (s)"]
+    )
+
+    if not timeline_df.empty:
+        st.line_chart(
+            timeline_df.set_index("Request"),
+            width="stretch",
+        )
+    else:
+        st.info("No request latency data available.")
+
+    # ----------------------------------------------------
+    # RAW REQUEST METRICS
+    # ----------------------------------------------------
+
+    st.markdown("### Individual Request Metrics")
+
+    st.dataframe(
+        details_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    st.download_button(
+        "Download Performance CSV",
+        data=details_df.to_csv(
+            index=False
+        ).encode("utf-8-sig"),
+        file_name="performance_metrics.csv",
+        mime="text/csv",
+    )
+
+    st.caption(
+        "Latency includes provider request overhead "
+        "and may include initial model loading. "
+        "Token counts are reported by the provider."
+    )
+
+
 # ============================================================
 # MAIN APPLICATION
 # ============================================================
@@ -1467,13 +1808,14 @@ def main() -> None:
     st.divider()
 
     # Dashboard tabs
-    experiment_tab, results_tab, analytics_tab, history_tab, comparison_tab, = st.tabs(
+    experiment_tab, results_tab, analytics_tab, history_tab, comparison_tab, performance_tab, = st.tabs(
         [
             "Experiment",
             "Results",
             "Analytics",
             "History",
             "Comparison",
+            "Performance",
         ]
     )
 
@@ -1497,6 +1839,9 @@ def main() -> None:
 
         render_comparison_tab()
 
+    with performance_tab:
+
+        render_performance_tab()
 
 if __name__ == "__main__":
     main()

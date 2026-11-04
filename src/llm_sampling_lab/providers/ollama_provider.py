@@ -22,6 +22,7 @@ class OllamaProvider(BaseProvider):
     """Adapter for locally hosted Ollama models."""
 
     name = "ollama"
+    supports_seed = True
 
     def __init__(
         self,
@@ -118,6 +119,9 @@ class OllamaProvider(BaseProvider):
 
         if request.top_k is not None:
             options["top_k"] = request.top_k
+
+        if request.seed is not None:
+            options["seed"] = request.seed
 
         response = self._client.chat(
             model=request.model,

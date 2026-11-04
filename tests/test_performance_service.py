@@ -1,0 +1,97 @@
+
+import pytest
+
+from llm_sampling_lab.domain.models import SamplingResult
+from llm_sampling_lab.services.performance_service import (
+    build_performance_rows,
+    summarize_performance_rows,
+)
+
+
+def make_result(top_k, latency, input_tokens, output_tokens):
+    return SamplingResult(
+        experiment="top_k",
+        temperature=0.8,
+        top_p=0.9,
+        top_k=top_k,
+        repetition=1,
+        response="Hello",
+        latency_seconds=latency,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
+def test_grouped_performance():
+    results = [
+        make_result(1, 0.1, 10, 5),
+        make_result(1, 0.3, 10, 7),
+        make_result(20, 0.2, 15, 8),
+    ]
+
+    rows = build_performance_rows(results, "top-k")
+    summary = summarize_performance_rows(rows)
+
+    assert len(summary) == 2
+    assert summary[0]["Requests"] == 2
+    assert summary[0]["Average Latency (s)"] == 0.2
+    assert summary[0]["Recorded Input Tokens"] == 20
+    assert summary[0]["Recorded Output Tokens"] == 12
+
+
+def test_historical_json_support():
+    records = [
+        {
+            "top_k": 40,
+            "repetition": 1,
+            "latency_seconds": 0.15,
+            "input_tokens": 25,
+            "output_tokens": 6,
+        }
+    ]
+
+    rows = build_performance_rows(records, "top_k")
+
+    assert rows[0]["Parameter"] == 40
+    assert rows[0]["Latency (s)"] == 0.15
+
+
+def test_old_reports_without_metrics():
+    records = [
+        {
+            "top_k": 20,
+            "repetition": 1,
+        }
+    ]
+
+    rows = build_performance_rows(records, "top_k")
+    summary = summarize_performance_rows(rows)
+
+    assert summary[0]["Average Latency (s)"] is None
+    assert summary[0]["Recorded Input Tokens"] is None
+
+
+def test_partial_token_coverage():
+    results = [
+        make_result(20, 0.1, 10, 5),
+        make_result(20, 0.2, None, None),
+    ]
+
+    rows = build_performance_rows(results, "top-k")
+    summary = summarize_performance_rows(rows)
+
+    assert summary[0]["Input Coverage"] == 1
+    assert summary[0]["Output Coverage"] == 1
+
+
+def test_reject_invalid_latency():
+    with pytest.raises(ValueError, match="latency"):
+        build_performance_rows(
+            [make_result(1, -0.5, 10, 5)],
+            "top-k",
+        )
+
+
+def test_reject_unknown_strategy():
+    with pytest.raises(ValueError, match="strategy"):
+        build_performance_rows([], "unknown")
