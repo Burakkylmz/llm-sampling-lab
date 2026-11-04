@@ -38,6 +38,7 @@ from llm_sampling_lab.services.reproducibility_service import (
     summarize_reproducibility,
 )
 from llm_sampling_lab.services.benchmark_reporting_service import (
+    build_token_comparison_rows,
     compare_benchmark_reports,
 )
 from llm_sampling_lab.services.controlled_benchmark import (
@@ -2115,24 +2116,15 @@ def render_benchmark_comparison_tab() -> None:
         st.info("Selected reports have no token usage data.")
 
     st.markdown("#### Token Usage — Numeric Comparison")
-    token_summary = summary_df[
-        [
-            "Experiment",
-            "Requests",
-            "Recorded Total Tokens",
-            "Average Total Tokens / Request",
-            "Total Token Coverage",
-        ]
-    ].copy()
-    token_summary["Total Token Coverage"] = (
-        token_summary["Total Token Coverage"].fillna(0).astype(int).astype(str)
-        + " / "
-        + token_summary["Requests"].astype(int).astype(str)
+    token_summary = pd.DataFrame(
+        build_token_comparison_rows(comparison["summary_rows"])
     )
     st.dataframe(
         token_summary,
         column_config={
-            "Experiment": st.column_config.TextColumn("Experiment"),
+            "Provider / Model": st.column_config.TextColumn(
+                "Provider / Model"
+            ),
             "Requests": st.column_config.NumberColumn(
                 "Requests", format="%d"
             ),
@@ -2142,12 +2134,21 @@ def render_benchmark_comparison_tab() -> None:
             "Average Total Tokens / Request": st.column_config.NumberColumn(
                 "Avg Tokens / Request", format="%.2f"
             ),
-            "Total Token Coverage": st.column_config.TextColumn(
+            "Difference vs E1": st.column_config.TextColumn(
+                "Avg Token Difference vs E1 (%)"
+            ),
+            "Token Coverage": st.column_config.TextColumn(
                 "Token Coverage (input + output)"
             ),
         },
         hide_index=True,
         width="stretch",
+    )
+    st.caption(
+        "E1 is the first selected experiment (reference). A positive "
+        "percentage means higher average tokens per request than E1; "
+        "a negative percentage means lower usage. N/A means the reference "
+        "has zero or missing average usage, or the comparison is missing."
     )
 
     with st.expander("View absolute token totals"):
