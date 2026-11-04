@@ -37,6 +37,9 @@ from llm_sampling_lab.services.performance_service import (
 from llm_sampling_lab.services.reproducibility_service import (
     summarize_reproducibility,
 )
+from llm_sampling_lab.services.benchmark_reporting_service import (
+    compare_benchmark_reports,
+)
 
 
 # ============================================================
@@ -1820,6 +1823,327 @@ def render_performance_tab() -> None:
     )
 
 
+
+def render_benchmark_comparison_tab() -> None:
+    """Compare benchmark performance across saved experiments."""
+
+    st.subheader("Benchmark Comparison")
+
+    st.caption(
+        "Compare latency, token usage and experiment "
+        "conditions across two or more saved reports."
+    )
+
+    reports = [
+        report
+        for report in list_experiment_reports()
+        if (
+            report.get("status") == "completed"
+            and isinstance(report.get("results"), list)
+            and report.get("experiment_type")
+            in {"temperature", "top_p", "top_k"}
+        )
+    ]
+
+    strategies = [
+        strategy
+        for strategy in ("temperature", "top_p", "top_k")
+        if sum(
+            report.get("experiment_type") == strategy
+            for report in reports
+        ) >= 2
+    ]
+
+    if not strategies:
+        st.info(
+            "At least two completed experiments using "
+            "the same sampling strategy are required."
+        )
+        return
+
+    strategy = st.selectbox(
+        "Sampling strategy",
+        options=strategies,
+        format_func=lambda value: value.replace("_", "-"),
+        key="benchmark_strategy",
+    )
+
+    candidates = [
+        report
+        for report in reports
+        if report.get("experiment_type") == strategy
+    ]
+
+    def format_report(index: int) -> str:
+        report = candidates[index]
+
+        date = str(
+            report.get("started_at_utc") or "Unknown date"
+        )[:19].replace("T", " ")
+
+        filename = Path(
+            str(report.get("_file_path") or "report.json")
+        ).name
+
+        return (
+            f"{date} | "
+            f"{report.get('provider', 'unknown')} | "
+            f"{report.get('model', 'unknown')} | "
+            f"{len(report['results'])} requests | "
+            f"{filename}"
+        )
+
+    selected_indices = st.multiselect(
+        "Select experiments",
+        options=list(range(len(candidates))),
+        default=list(range(min(2, len(candidates)))),
+        format_func=format_report,
+        key=f"benchmark_selection_{strategy}",
+    )
+
+    if len(selected_indices) < 2:
+        st.warning("Select at least two experiments.")
+        return
+
+    selected_reports = [
+        candidates[index]
+        for index in selected_indices
+    ]
+
+    try:
+        comparison = compare_benchmark_reports(
+            selected_reports
+        )
+    except (ValueError, TypeError, KeyError) as exc:
+        st.error(f"Benchmark comparison failed: {exc}")
+        return
+
+    summary_df = pd.DataFrame(
+        comparison["summary_rows"]
+    )
+
+    parameter_df = pd.DataFrame(
+        comparison["parameter_rows"]
+    )
+
+    st.divider()
+
+    # --------------------------------------------------
+    # OVERVIEW
+    # --------------------------------------------------
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "Experiments",
+            comparison["experiment_count"],
+            border=True,
+        )
+
+    with col2:
+        st.metric(
+            "Total Requests",
+            int(summary_df["Requests"].sum()),
+            border=True,
+        )
+
+    with col3:
+        st.metric(
+            "Measured Requests",
+            int(summary_df["Measured Requests"].sum()),
+            border=True,
+        )
+
+    # --------------------------------------------------
+    # COMPARABILITY CHECKS
+    # --------------------------------------------------
+
+    st.markdown("### Comparability Checks")
+
+    warnings = list(comparison["warnings"])
+
+    provider_models = {
+        (
+            report.get("provider"),
+            report.get("model"),
+        )
+        for report in selected_reports
+    }
+
+    if len(provider_models) > 1:
+        warnings.insert(
+            0,
+            "Different providers or models are selected. "
+            "Latency and token counts may not be "
+            "directly comparable."
+        )
+
+    order_seeds = {
+        (report.get("parameters") or {}).get("order_seed")
+        for report in selected_reports
+    }
+
+    if len(order_seeds) > 1:
+        warnings.append(
+            "Execution order seeds differ."
+        )
+
+    if warnings:
+        for warning in warnings:
+            st.warning(warning)
+    else:
+        st.success(
+            "No comparability differences detected "
+            "in the checked experiment settings."
+        )
+
+    # --------------------------------------------------
+    # SUMMARY TABLE
+    # --------------------------------------------------
+
+    st.divider()
+    st.markdown("### Experiment Benchmark Summary")
+
+    st.dataframe(
+        summary_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    chart_df = summary_df.set_index(
+        "Experiment"
+    ).copy()
+
+    # --------------------------------------------------
+    # LATENCY COMPARISON
+    # --------------------------------------------------
+
+    st.markdown("### Latency Comparison")
+
+    latency_columns = [
+        "Average Latency (s)",
+        "Median Latency (s)",
+        "P95 Latency (s)",
+    ]
+
+    latency_df = chart_df[
+        latency_columns
+    ].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+
+    if latency_df.notna().any().any():
+        st.bar_chart(
+            latency_df,
+            stack=False,
+            width="stretch",
+        )
+    else:
+        st.info(
+            "Selected reports have no latency measurements."
+        )
+
+    # --------------------------------------------------
+    # TOKEN COMPARISON
+    # --------------------------------------------------
+
+    st.markdown("### Token Usage Comparison")
+
+    token_columns = [
+        "Recorded Input Tokens",
+        "Recorded Output Tokens",
+    ]
+
+    token_df = chart_df[
+        token_columns
+    ].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+
+    if token_df.notna().any().any():
+        st.bar_chart(
+            token_df,
+            stack=False,
+            width="stretch",
+        )
+    else:
+        st.info(
+            "Selected reports have no token usage data."
+        )
+
+    st.caption(
+        "Token totals are based only on reported values. "
+        "Different request counts and provider tokenizers "
+        "can make direct comparisons misleading."
+    )
+
+    # --------------------------------------------------
+    # PARAMETER-LEVEL METRICS
+    # --------------------------------------------------
+
+    st.divider()
+    st.markdown("### Metrics by Sampling Parameter")
+
+    st.dataframe(
+        parameter_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    # --------------------------------------------------
+    # EXPORTS
+    # --------------------------------------------------
+
+    st.divider()
+    st.markdown("### Export Benchmark Report")
+
+    export_data = {
+        "experiment_count": comparison["experiment_count"],
+        "metadata": [
+            report["metadata"]
+            for report in comparison["reports"]
+        ],
+        "summary_rows": comparison["summary_rows"],
+        "parameter_rows": comparison["parameter_rows"],
+        "warnings": warnings,
+    }
+
+    csv_col, json_col = st.columns(2)
+
+    with csv_col:
+        st.download_button(
+            "Download Benchmark CSV",
+            data=summary_df.to_csv(
+                index=False
+            ).encode("utf-8-sig"),
+            file_name="benchmark_comparison.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    with json_col:
+        st.download_button(
+            "Download Benchmark JSON",
+            data=json.dumps(
+                export_data,
+                indent=2,
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            file_name="benchmark_comparison.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
+    st.caption(
+        "P95 estimates from small samples can be unstable. "
+        "Performance differences do not by themselves "
+        "indicate differences in generation quality."
+    )
+
+
 # ============================================================
 # MAIN APPLICATION
 # ============================================================
@@ -1887,8 +2211,18 @@ def main() -> None:
         render_comparison_tab()
 
     with performance_tab:
+        request_tab, benchmark_tab = st.tabs(
+            [
+                "Request Analytics",
+                "Benchmark Comparison",
+            ]
+        )
 
-        render_performance_tab()
+        with request_tab:
+            render_performance_tab()
+
+        with benchmark_tab:
+            render_benchmark_comparison_tab()
 
 if __name__ == "__main__":
     main()
