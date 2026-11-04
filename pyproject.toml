@@ -9,6 +9,8 @@ dependencies = [
     "groq>=1.7.0",
     "matplotlib>=3.11.2",
     "numpy>=2.5.4",
+    "ollama>=0.6.3",
+    "openai>=3.42.1",
 ]
 
 [project.scripts]
