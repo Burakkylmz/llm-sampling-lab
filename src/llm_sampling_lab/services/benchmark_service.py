@@ -28,6 +28,15 @@ def summarize_benchmark(
         if result.output_tokens is not None
     ]
 
+    combined_tokens = [
+        result.input_tokens + result.output_tokens
+        for result in results
+        if (
+            result.input_tokens is not None
+            and result.output_tokens is not None
+        )
+    ]
+
     return {
         "total_requests": len(results),
         "measured_requests": len(latencies),
@@ -40,9 +49,22 @@ def summarize_benchmark(
         "total_input_tokens": (
             sum(input_tokens) if input_tokens else None
         ),
+        "average_input_tokens_per_request": (
+            round(mean(input_tokens), 2) if input_tokens else None
+        ),
         "total_output_tokens": (
             sum(output_tokens) if output_tokens else None
         ),
+        "average_output_tokens_per_request": (
+            round(mean(output_tokens), 2) if output_tokens else None
+        ),
+        "total_tokens": (
+            sum(combined_tokens) if combined_tokens else None
+        ),
+        "average_tokens_per_request": (
+            round(mean(combined_tokens), 2) if combined_tokens else None
+        ),
         "requests_with_input_usage": len(input_tokens),
         "requests_with_output_usage": len(output_tokens),
+        "requests_with_complete_usage": len(combined_tokens),
     }
