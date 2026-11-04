@@ -303,3 +303,48 @@ def compare_benchmark_reports(
         "warnings": warnings,
         "reports": benchmark_reports,
     }
+
+
+def build_token_comparison_rows(
+    summary_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Show comparable per-request token usage against experiment 1.
+
+    The percentage difference is relative to the first selected
+    experiment's average combined token usage, not its token total.
+    """
+
+    if not summary_rows:
+        return []
+
+    reference = summary_rows[0].get(
+        "Average Total Tokens / Request"
+    )
+    rows = []
+
+    for index, item in enumerate(summary_rows, start=1):
+        average = item.get("Average Total Tokens / Request")
+        requests = item["Requests"]
+        measured = item["Total Token Coverage"]
+
+        if index == 1:
+            change = "Reference"
+        elif reference is None or reference == 0 or average is None:
+            change = "N/A"
+        else:
+            difference = (average - reference) / reference * 100
+            change = f"{difference:+.2f}%"
+
+        provider = item.get("Provider") or "Unknown provider"
+        model = item.get("Model") or "Unknown model"
+
+        rows.append({
+            "Provider / Model": f"{provider} / {model} (E{index})",
+            "Requests": requests,
+            "Recorded Total Tokens": item.get("Recorded Total Tokens"),
+            "Average Total Tokens / Request": average,
+            "Difference vs E1": change,
+            "Token Coverage": f"{measured}/{requests}",
+        })
+
+    return rows
