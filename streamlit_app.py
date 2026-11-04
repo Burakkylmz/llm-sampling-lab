@@ -112,6 +112,8 @@ def execute_experiment(
     settings: dict,
     warmup_requests: int = 0,
     seed: int | None = None,
+    randomize_order: bool = False,
+    order_seed: int | None = None,
 ) -> tuple[list[SamplingResult], str]:
     """Execute and persist an LLM sampling experiment."""
 
@@ -171,6 +173,8 @@ def execute_experiment(
         repetitions=repetitions,
         warmup_requests=warmup_requests,
         seed=seed,
+        randomize_order=randomize_order,
+        order_seed=order_seed,
     )
 
     try:
@@ -180,6 +184,8 @@ def execute_experiment(
                 model=model,
                 warmup_requests=warmup_requests,
                 seed=seed,
+                randomize_order=randomize_order,
+                order_seed=order_seed,
             )
 
             if strategy == "temperature":
@@ -450,6 +456,40 @@ def render_sidebar(
                 "reduce observed response diversity."
             )
 
+        
+        st.divider()
+        st.subheader("Execution Order")
+
+        randomize_order = st.checkbox(
+            "Randomize experiment order",
+            value=False,
+            help=(
+                "Shuffle sampling parameter values "
+                "within each repetition round."
+            ),
+        )
+
+        order_seed = None
+
+        if randomize_order:
+            order_seed = int(
+                st.number_input(
+                    "Execution order seed",
+                    min_value=0,
+                    value=42,
+                    step=1,
+                    help=(
+                        "Controls the order of parameter "
+                        "execution, not LLM generation."
+                    ),
+                )
+            )
+
+            st.info(
+                "Each repetition round will test "
+                "all parameter values in a shuffled order."
+            )
+
         run_button = st.button(
             "Run Experiment",
             type="primary",
@@ -474,6 +514,8 @@ def render_sidebar(
         "run_button": run_button,
         "warmup_requests": int(warmup_requests),
         "seed": seed,
+        "randomize_order": randomize_order,
+        "order_seed": order_seed,
     }
 
 
@@ -879,6 +921,8 @@ def handle_experiment_run(
                 settings=settings,
                 warmup_requests=config["warmup_requests"],
                 seed=config["seed"],
+                randomize_order=config["randomize_order"],
+                order_seed=config["order_seed"],
             )
 
         st.session_state["last_run"] = {
@@ -890,6 +934,8 @@ def handle_experiment_run(
             "report_path": report_path,
             "warmup_requests": config["warmup_requests"],
             "seed": config["seed"],
+            "randomize_order": config["randomize_order"],
+            "order_seed": config["order_seed"],
         }
 
         st.success(
@@ -1690,6 +1736,7 @@ def render_performance_tab() -> None:
     latency_columns = [
         "Average Latency (s)",
         "Median Latency (s)",
+        "P95 Latency (s)",
     ]
 
     if chart_df[latency_columns].notna().any().any():

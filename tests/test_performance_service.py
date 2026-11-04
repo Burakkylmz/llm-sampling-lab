@@ -95,3 +95,15 @@ def test_reject_invalid_latency():
 def test_reject_unknown_strategy():
     with pytest.raises(ValueError, match="strategy"):
         build_performance_rows([], "unknown")
+
+
+def test_p95_latency():
+    from llm_sampling_lab.services.performance_service import (
+        calculate_p95,
+    )
+
+    latencies = [i / 100 for i in range(1, 21)]
+
+    assert calculate_p95(latencies) == 0.19
+    assert calculate_p95([]) is None
+    assert calculate_p95([0.5]) == 0.5

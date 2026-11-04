@@ -91,6 +91,22 @@ def build_performance_rows(
     return rows
 
 
+
+def calculate_p95(
+    latencies: list[float],
+) -> float | None:
+    """Calculate P95 latency using the nearest-rank method."""
+
+    if not latencies:
+        return None
+
+    ordered = sorted(latencies)
+
+    index = math.ceil(0.95 * len(ordered)) - 1
+
+    return round(ordered[index], 4)
+
+
 def summarize_performance_rows(
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -136,6 +152,7 @@ def summarize_performance_rows(
                 round(median(latencies), 4)
                 if latencies else None
             ),
+            "P95 Latency (s)": calculate_p95(latencies),
             "Recorded Input Tokens": (
                 sum(inputs) if inputs else None
             ),
