@@ -12,6 +12,7 @@ from llm_sampling_lab.providers.capabilities import (
 
 
 class BaseProvider(ABC):
+    supports_seed = False
 
     @abstractmethod
     def get_capabilities(
@@ -62,6 +63,20 @@ class BaseProvider(ABC):
             ):
                 raise ValueError("Invalid top_k")
 
+        if request.seed is not None:
+            if (
+                type(request.seed) is not int
+                or request.seed < 0
+            ):
+                raise ValueError(
+                    "Invalid seed: expected a non-negative integer."
+                )
+
+            if not self.supports_seed:
+                raise ValueError(
+                    f"{type(self).__name__} does not support seed."
+                )
+                
         capabilities = self.get_capabilities(
             request.model
         )

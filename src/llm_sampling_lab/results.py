@@ -33,8 +33,11 @@ class ExperimentRecorder:
         output_dir: str | Path = "results",
         provider: str = "groq",
         extra_fixed_parameters: dict[str, float] | None = None,
+        warmup_requests: int = 0,
+        seed: int | None = None,
+        randomize_order: bool = False,
+        order_seed: int | None = None,
     ) -> None:
-
         if experiment_type not in (
             "temperature",
             "top_p",
@@ -80,6 +83,10 @@ class ExperimentRecorder:
                     **(extra_fixed_parameters or {}),
                 },
                 "repetitions": repetitions,
+                "warmup_requests": warmup_requests,
+                "seed": seed,
+                "randomize_order": randomize_order,
+                "order_seed": order_seed,
             },
             "status": "running",
             "started_at_utc": _utc_now(),
