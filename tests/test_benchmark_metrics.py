@@ -124,6 +124,11 @@ def test_benchmark_summary():
     assert summary["measured_requests"] == 2
     assert summary["total_input_tokens"] == 30
     assert summary["total_output_tokens"] == 12
+    assert summary["average_input_tokens_per_request"] == 15
+    assert summary["average_output_tokens_per_request"] == 6
+    assert summary["total_tokens"] == 42
+    assert summary["average_tokens_per_request"] == 21
+    assert summary["requests_with_complete_usage"] == 2
     assert summary["average_latency_seconds"] >= 0
 
 
@@ -152,6 +157,10 @@ def test_missing_token_usage_remains_unknown():
 
     assert summary["total_input_tokens"] is None
     assert summary["total_output_tokens"] is None
+    assert summary["average_input_tokens_per_request"] is None
+    assert summary["average_output_tokens_per_request"] is None
+    assert summary["average_tokens_per_request"] is None
+    assert summary["requests_with_complete_usage"] == 0
 
 
 def test_metrics_are_persisted_to_json(tmp_path):
