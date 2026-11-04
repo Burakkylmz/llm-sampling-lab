@@ -74,6 +74,15 @@ def build_benchmark_report(
         if row["Output Tokens"] is not None
     ]
 
+    complete_tokens = [
+        row["Input Tokens"] + row["Output Tokens"]
+        for row in rows
+        if (
+            row["Input Tokens"] is not None
+            and row["Output Tokens"] is not None
+        )
+    ]
+
     total = len(rows)
 
     metrics = {
@@ -91,12 +100,25 @@ def build_benchmark_report(
         "Recorded Input Tokens": (
             sum(input_tokens) if input_tokens else None
         ),
+        "Average Input Tokens / Request": (
+            round(mean(input_tokens), 2) if input_tokens else None
+        ),
         "Recorded Output Tokens": (
             sum(output_tokens) if output_tokens else None
+        ),
+        "Average Output Tokens / Request": (
+            round(mean(output_tokens), 2) if output_tokens else None
+        ),
+        "Recorded Total Tokens": (
+            sum(complete_tokens) if complete_tokens else None
+        ),
+        "Average Total Tokens / Request": (
+            round(mean(complete_tokens), 2) if complete_tokens else None
         ),
         "Latency Coverage": len(latencies),
         "Input Coverage": len(input_tokens),
         "Output Coverage": len(output_tokens),
+        "Total Token Coverage": len(complete_tokens),
     }
 
     metadata = {
@@ -239,8 +261,9 @@ def compare_benchmark_reports(
 
     if len(set(request_counts)) > 1:
         warnings.append(
-            "Request counts differ. Token totals and "
-            "latency statistics may not be directly comparable."
+            "Request counts differ. Compare average tokens per "
+            "measured request rather than token totals; "
+            "latency statistics may also be affected."
         )
 
     for index, benchmark in enumerate(
