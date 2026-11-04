@@ -140,6 +140,16 @@ def summarize_performance_rows(
             if item["Output Tokens"] is not None
         ]
 
+        # Sum only requests with both usage components recorded.
+        totals = [
+            item["Input Tokens"] + item["Output Tokens"]
+            for item in group
+            if (
+                item["Input Tokens"] is not None
+                and item["Output Tokens"] is not None
+            )
+        ]
+
         summary.append({
             "Parameter": parameter,
             "Requests": len(group),
@@ -156,11 +166,24 @@ def summarize_performance_rows(
             "Recorded Input Tokens": (
                 sum(inputs) if inputs else None
             ),
+            "Average Input Tokens / Request": (
+                round(mean(inputs), 2) if inputs else None
+            ),
             "Recorded Output Tokens": (
                 sum(outputs) if outputs else None
             ),
+            "Average Output Tokens / Request": (
+                round(mean(outputs), 2) if outputs else None
+            ),
+            "Recorded Total Tokens": (
+                sum(totals) if totals else None
+            ),
+            "Average Total Tokens / Request": (
+                round(mean(totals), 2) if totals else None
+            ),
             "Input Coverage": len(inputs),
             "Output Coverage": len(outputs),
+            "Total Token Coverage": len(totals),
         })
 
     return summary
