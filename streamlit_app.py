@@ -2114,6 +2114,42 @@ def render_benchmark_comparison_tab() -> None:
     else:
         st.info("Selected reports have no token usage data.")
 
+    st.markdown("#### Token Usage — Numeric Comparison")
+    token_summary = summary_df[
+        [
+            "Experiment",
+            "Requests",
+            "Recorded Total Tokens",
+            "Average Total Tokens / Request",
+            "Total Token Coverage",
+        ]
+    ].copy()
+    token_summary["Total Token Coverage"] = (
+        token_summary["Total Token Coverage"].fillna(0).astype(int).astype(str)
+        + " / "
+        + token_summary["Requests"].astype(int).astype(str)
+    )
+    st.dataframe(
+        token_summary,
+        column_config={
+            "Experiment": st.column_config.TextColumn("Experiment"),
+            "Requests": st.column_config.NumberColumn(
+                "Requests", format="%d"
+            ),
+            "Recorded Total Tokens": st.column_config.NumberColumn(
+                "Recorded Total Tokens", format="%d"
+            ),
+            "Average Total Tokens / Request": st.column_config.NumberColumn(
+                "Avg Tokens / Request", format="%.2f"
+            ),
+            "Total Token Coverage": st.column_config.TextColumn(
+                "Token Coverage (input + output)"
+            ),
+        },
+        hide_index=True,
+        width="stretch",
+    )
+
     with st.expander("View absolute token totals"):
         token_columns = [
             "Recorded Input Tokens",
