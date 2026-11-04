@@ -3,6 +3,7 @@ import pytest
 
 from llm_sampling_lab.services.benchmark_reporting_service import (
     build_benchmark_report,
+    build_token_comparison_rows,
     compare_benchmark_reports,
 )
 
@@ -260,3 +261,56 @@ def test_different_request_counts_use_per_request_mean():
     assert long_metrics["Average Total Tokens / Request"] == 100
     assert short_metrics["Average Total Tokens / Request"] == 150
     assert any("Request counts differ" in w for w in comparison["warnings"])
+
+
+def _token_row(provider, model, requests, total, average, coverage):
+    return {
+        "Provider": provider,
+        "Model": model,
+        "Requests": requests,
+        "Recorded Total Tokens": total,
+        "Average Total Tokens / Request": average,
+        "Total Token Coverage": coverage,
+    }
+
+
+def test_token_comparison_labels_and_percentage_change():
+    rows = build_token_comparison_rows([
+        _token_row("groq", "model-a", 20, 2000, 100.0, 20),
+        _token_row("ollama", "model-b", 10, 1500, 150.0, 10),
+        _token_row("openai", "model-c", 10, 500, 50.0, 10),
+    ])
+
+    assert rows[0]["Provider / Model"] == "groq / model-a (E1)"
+    assert rows[1]["Provider / Model"] == "ollama / model-b (E2)"
+    assert rows[2]["Provider / Model"] == "openai / model-c (E3)"
+    assert rows[0]["Difference vs E1"] == "Reference"
+    assert rows[1]["Difference vs E1"] == "+50.00%"
+    assert rows[2]["Difference vs E1"] == "-50.00%"
+    assert rows[1]["Token Coverage"] == "10/10"
+
+
+def test_token_comparison_same_model_and_equal_usage():
+    rows = build_token_comparison_rows([
+        _token_row("groq", "same-model", 9, 437, 48.56, 9),
+        _token_row("groq", "same-model", 9, 437, 48.56, 9),
+    ])
+    assert rows[0]["Provider / Model"] != rows[1]["Provider / Model"]
+    assert rows[1]["Difference vs E1"] == "+0.00%"
+
+
+def test_token_comparison_unknown_or_zero_reference():
+    for reference in (0, None):
+        rows = build_token_comparison_rows([
+            _token_row("groq", "model", 2, 0, reference, 2),
+            _token_row("ollama", "model", 2, 100, 50, 2),
+        ])
+        assert rows[1]["Difference vs E1"] == "N/A"
+
+    rows = build_token_comparison_rows([
+        _token_row("groq", "model", 2, 20, 10, 2),
+        _token_row("ollama", "model", 2, None, None, 0),
+    ])
+    assert rows[1]["Difference vs E1"] == "N/A"
+    assert rows[1]["Token Coverage"] == "0/2"
+    assert build_token_comparison_rows([]) == []
