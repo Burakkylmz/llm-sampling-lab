@@ -107,3 +107,54 @@ def test_p95_latency():
     assert calculate_p95(latencies) == 0.19
     assert calculate_p95([]) is None
     assert calculate_p95([0.5]) == 0.5
+
+
+
+def test_per_request_token_averages_and_combined_usage():
+    results = [
+        make_result(20, 0.1, 10, 5),
+        make_result(20, 0.2, 30, 15),
+    ]
+    rows = build_performance_rows(results, "top-k")
+    summary = summarize_performance_rows(rows)[0]
+
+    assert summary["Recorded Input Tokens"] == 40
+    assert summary["Average Input Tokens / Request"] == 20
+    assert summary["Recorded Output Tokens"] == 20
+    assert summary["Average Output Tokens / Request"] == 10
+    assert summary["Recorded Total Tokens"] == 60
+    assert summary["Average Total Tokens / Request"] == 30
+    assert summary["Total Token Coverage"] == 2
+
+
+def test_per_request_averages_use_only_observed_usage():
+    results = [
+        make_result(20, 0.1, 10, 5),
+        make_result(20, 0.2, 20, None),
+        make_result(20, 0.3, None, 15),
+        make_result(20, 0.4, None, None),
+    ]
+    rows = build_performance_rows(results, "top-k")
+    summary = summarize_performance_rows(rows)[0]
+
+    assert summary["Requests"] == 4
+    assert summary["Input Coverage"] == 2
+    assert summary["Output Coverage"] == 2
+    assert summary["Total Token Coverage"] == 1
+    assert summary["Average Input Tokens / Request"] == 15
+    assert summary["Average Output Tokens / Request"] == 10
+    assert summary["Recorded Total Tokens"] == 15
+    assert summary["Average Total Tokens / Request"] == 15
+
+
+def test_per_request_averages_unknown_when_no_usage():
+    rows = build_performance_rows(
+        [make_result(20, 0.1, None, None)],
+        "top-k",
+    )
+    summary = summarize_performance_rows(rows)[0]
+
+    assert summary["Average Input Tokens / Request"] is None
+    assert summary["Average Output Tokens / Request"] is None
+    assert summary["Average Total Tokens / Request"] is None
+    assert summary["Total Token Coverage"] == 0

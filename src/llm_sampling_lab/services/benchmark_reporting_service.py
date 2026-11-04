@@ -74,6 +74,15 @@ def build_benchmark_report(
         if row["Output Tokens"] is not None
     ]
 
+    complete_tokens = [
+        row["Input Tokens"] + row["Output Tokens"]
+        for row in rows
+        if (
+            row["Input Tokens"] is not None
+            and row["Output Tokens"] is not None
+        )
+    ]
+
     total = len(rows)
 
     metrics = {
@@ -91,12 +100,25 @@ def build_benchmark_report(
         "Recorded Input Tokens": (
             sum(input_tokens) if input_tokens else None
         ),
+        "Average Input Tokens / Request": (
+            round(mean(input_tokens), 2) if input_tokens else None
+        ),
         "Recorded Output Tokens": (
             sum(output_tokens) if output_tokens else None
+        ),
+        "Average Output Tokens / Request": (
+            round(mean(output_tokens), 2) if output_tokens else None
+        ),
+        "Recorded Total Tokens": (
+            sum(complete_tokens) if complete_tokens else None
+        ),
+        "Average Total Tokens / Request": (
+            round(mean(complete_tokens), 2) if complete_tokens else None
         ),
         "Latency Coverage": len(latencies),
         "Input Coverage": len(input_tokens),
         "Output Coverage": len(output_tokens),
+        "Total Token Coverage": len(complete_tokens),
     }
 
     metadata = {
@@ -239,8 +261,9 @@ def compare_benchmark_reports(
 
     if len(set(request_counts)) > 1:
         warnings.append(
-            "Request counts differ. Token totals and "
-            "latency statistics may not be directly comparable."
+            "Request counts differ. Compare average tokens per "
+            "measured request rather than token totals; "
+            "latency statistics may also be affected."
         )
 
     for index, benchmark in enumerate(
@@ -280,3 +303,48 @@ def compare_benchmark_reports(
         "warnings": warnings,
         "reports": benchmark_reports,
     }
+
+
+def build_token_comparison_rows(
+    summary_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Show comparable per-request token usage against experiment 1.
+
+    The percentage difference is relative to the first selected
+    experiment's average combined token usage, not its token total.
+    """
+
+    if not summary_rows:
+        return []
+
+    reference = summary_rows[0].get(
+        "Average Total Tokens / Request"
+    )
+    rows = []
+
+    for index, item in enumerate(summary_rows, start=1):
+        average = item.get("Average Total Tokens / Request")
+        requests = item["Requests"]
+        measured = item["Total Token Coverage"]
+
+        if index == 1:
+            change = "Reference"
+        elif reference is None or reference == 0 or average is None:
+            change = "N/A"
+        else:
+            difference = (average - reference) / reference * 100
+            change = f"{difference:+.2f}%"
+
+        provider = item.get("Provider") or "Unknown provider"
+        model = item.get("Model") or "Unknown model"
+
+        rows.append({
+            "Provider / Model": f"{provider} / {model} (E{index})",
+            "Requests": requests,
+            "Recorded Total Tokens": item.get("Recorded Total Tokens"),
+            "Average Total Tokens / Request": average,
+            "Difference vs E1": change,
+            "Token Coverage": f"{measured}/{requests}",
+        })
+
+    return rows
