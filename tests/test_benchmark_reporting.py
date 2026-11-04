@@ -235,3 +235,28 @@ def test_benchmark_without_usage_has_unknown_averages():
     assert metrics["Average Output Tokens / Request"] is None
     assert metrics["Average Total Tokens / Request"] is None
     assert metrics["Total Token Coverage"] == 0
+
+
+
+def test_different_request_counts_use_per_request_mean():
+    long_report = make_report(
+        experiment_id="long",
+        latencies=(0.1,) * 20,
+        input_tokens=60,
+        output_tokens=40,
+    )
+    short_report = make_report(
+        experiment_id="short",
+        latencies=(0.1,) * 10,
+        input_tokens=90,
+        output_tokens=60,
+    )
+
+    comparison = compare_benchmark_reports([long_report, short_report])
+    long_metrics, short_metrics = comparison["summary_rows"]
+
+    assert long_metrics["Recorded Total Tokens"] == 2000
+    assert short_metrics["Recorded Total Tokens"] == 1500
+    assert long_metrics["Average Total Tokens / Request"] == 100
+    assert short_metrics["Average Total Tokens / Request"] == 150
+    assert any("Request counts differ" in w for w in comparison["warnings"])
