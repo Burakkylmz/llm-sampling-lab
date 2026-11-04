@@ -40,6 +40,10 @@ from llm_sampling_lab.services.reproducibility_service import (
 from llm_sampling_lab.services.benchmark_reporting_service import (
     compare_benchmark_reports,
 )
+from llm_sampling_lab.services.controlled_benchmark import (
+    ControlledBenchmarkConfig,
+    run_controlled_benchmark,
+)
 
 
 # ============================================================
@@ -2144,6 +2148,329 @@ def render_benchmark_comparison_tab() -> None:
     )
 
 
+
+def render_controlled_benchmark_tab(
+    config: dict,
+    settings: dict,
+) -> None:
+    """Configure, preview and run controlled benchmarks."""
+
+    st.subheader("Controlled Benchmark")
+
+    st.caption(
+        "Run a standardized benchmark with warm-up, "
+        "reproducible execution ordering and "
+        "measured performance metrics."
+    )
+
+    provider_name = config["provider"]
+    model = config["model"].strip()
+    prompt = config["prompt"].strip()
+
+    st.write(
+        f"**Provider:** {provider_name} | "
+        f"**Model:** {model}"
+    )
+
+    strategies = ["temperature", "top_p"]
+
+    if provider_name == "ollama":
+        strategies.append("top_k")
+
+    strategy = st.selectbox(
+        "Benchmark strategy",
+        strategies,
+        format_func=lambda value: value.replace("_", "-"),
+        key="controlled_strategy",
+    )
+
+    if strategy == "temperature":
+        values = tuple(
+            settings["temperature"]["values"]
+        )
+        fixed_temperature = 0.8
+        fixed_top_p = float(
+            settings["temperature"]["top_p"]
+        )
+
+    elif strategy == "top_p":
+        values = tuple(
+            settings["top_p"]["values"]
+        )
+        fixed_temperature = float(
+            settings["top_p"]["temperature"]
+        )
+        fixed_top_p = 0.9
+
+    else:
+        values = tuple(TOP_K_VALUES)
+        fixed_temperature = TOP_K_TEMPERATURE
+        fixed_top_p = TOP_K_TOP_P
+
+    st.write("**Sampling values:**", list(values))
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        repetitions = int(
+            st.number_input(
+                "Repetitions per value",
+                min_value=1,
+                max_value=100,
+                value=3,
+                step=1,
+                key="controlled_repetitions",
+            )
+        )
+
+        warmup = int(
+            st.selectbox(
+                "Warm-up requests",
+                options=[0, 1, 2, 3],
+                index=1,
+                key="controlled_warmup",
+            )
+        )
+
+    with col2:
+        max_tokens = int(
+            st.number_input(
+                "Maximum output tokens",
+                min_value=1,
+                max_value=4096,
+                value=128,
+                step=1,
+                key="controlled_max_tokens",
+            )
+        )
+
+        randomize = st.checkbox(
+            "Randomize execution order",
+            value=True,
+            key="controlled_randomize",
+        )
+
+    order_seed = None
+
+    if randomize:
+        order_seed = int(
+            st.number_input(
+                "Execution order seed",
+                min_value=0,
+                value=42,
+                step=1,
+                key="controlled_order_seed",
+            )
+        )
+
+    use_generation_seed = st.checkbox(
+        "Use generation seed",
+        value=False,
+        disabled=provider_name != "ollama",
+        key="controlled_use_seed",
+    )
+
+    generation_seed = None
+
+    if use_generation_seed and provider_name == "ollama":
+        generation_seed = int(
+            st.number_input(
+                "Generation seed",
+                min_value=0,
+                value=42,
+                step=1,
+                key="controlled_generation_seed",
+            )
+        )
+
+        st.warning(
+            "Using the same generation seed may "
+            "reduce observed response diversity."
+        )
+
+    try:
+        benchmark_config = ControlledBenchmarkConfig(
+            strategy=strategy,
+            prompt=prompt,
+            values=values,
+            repetitions=repetitions,
+            fixed_temperature=fixed_temperature,
+            fixed_top_p=fixed_top_p,
+            max_output_tokens=max_tokens,
+            warmup_requests=warmup,
+            randomize_order=randomize,
+            order_seed=order_seed,
+            generation_seed=generation_seed,
+        )
+
+        preview = benchmark_config.preview()
+
+    except ValueError as exc:
+        st.error(f"Invalid benchmark settings: {exc}")
+        return
+
+    # --------------------------------------------------
+    # EXECUTION PREVIEW
+    # --------------------------------------------------
+
+    st.divider()
+    st.markdown("### Execution Preview")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.metric(
+            "Measured Requests",
+            preview["recorded_requests"],
+            border=True,
+        )
+
+    with c2:
+        st.metric(
+            "Warm-up Requests",
+            preview["warmup_requests"],
+            border=True,
+        )
+
+    with c3:
+        st.metric(
+            "Total Provider Calls",
+            preview["total_provider_calls"],
+            border=True,
+        )
+
+    with st.expander("View execution order"):
+        st.dataframe(
+            pd.DataFrame(
+                preview["execution_order"]
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+
+    if preview["recorded_requests"] < 20:
+        st.info(
+            "This is a small benchmark. "
+            "P95 estimates may be unstable."
+        )
+
+    requires_confirmation = (
+        provider_name != "ollama"
+        and preview["total_provider_calls"] > 20
+    )
+
+    confirmed = True
+
+    if requires_confirmation:
+        st.warning(
+            "This benchmark uses a cloud provider. "
+            "All requests, including warm-up, "
+            "may incur API charges."
+        )
+
+        confirmed = st.checkbox(
+            "I understand the API request volume.",
+            key="controlled_cost_confirmation",
+        )
+
+    # --------------------------------------------------
+    # EXECUTION
+    # --------------------------------------------------
+
+    if not st.button(
+        "Run Controlled Benchmark",
+        type="primary",
+        disabled=not confirmed,
+        key="controlled_run_button",
+    ):
+        return
+
+    total = preview["recorded_requests"]
+    completed = 0
+
+    progress = st.progress(
+        0.0,
+        text="Starting controlled benchmark...",
+    )
+
+    def update_progress(result: SamplingResult) -> None:
+        nonlocal completed
+
+        completed += 1
+
+        progress.progress(
+            completed / total,
+            text=f"Completed {completed}/{total} requests",
+        )
+
+    try:
+        with st.spinner("Running controlled benchmark..."):
+            with provider_session(provider_name) as provider:
+                outcome = run_controlled_benchmark(
+                    provider=provider,
+                    model=model,
+                    config=benchmark_config,
+                    on_result=update_progress,
+                )
+
+    except Exception as exc:
+        st.error(
+            "Controlled benchmark failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        st.info(
+            "If a report was created, completed requests "
+            "are retained in Experiment History."
+        )
+        return
+
+    display_strategy = strategy.replace("_", "-")
+
+    st.session_state["last_run"] = {
+        "provider": provider_name,
+        "model": model,
+        "strategy": display_strategy,
+        "prompt": prompt,
+        "results": outcome.results,
+        "report_path": str(outcome.report_path),
+        "warmup_requests": warmup,
+        "seed": generation_seed,
+        "randomize_order": randomize,
+        "order_seed": order_seed,
+    }
+
+    st.success("Controlled benchmark completed successfully!")
+
+    metrics = outcome.benchmark_report["metrics"]
+
+    st.markdown("### Benchmark Results")
+
+    st.metric(
+        "Completed Requests",
+        metrics["Requests"],
+    )
+
+    st.dataframe(
+        pd.DataFrame(
+            outcome.benchmark_report["by_parameter"]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+
+    st.caption(
+        f"Saved report: {outcome.report_path}"
+    )
+
+    st.download_button(
+        "Download Benchmark JSON",
+        data=outcome.report_path.read_bytes(),
+        file_name=outcome.report_path.name,
+        mime="application/json",
+        key="controlled_download_json",
+    )
+
+
 # ============================================================
 # MAIN APPLICATION
 # ============================================================
@@ -2179,7 +2506,7 @@ def main() -> None:
     st.divider()
 
     # Dashboard tabs
-    experiment_tab, results_tab, analytics_tab, history_tab, comparison_tab, performance_tab, = st.tabs(
+    experiment_tab, results_tab, analytics_tab, history_tab, comparison_tab, performance_tab, controlled_tab, = st.tabs(
         [
             "Experiment",
             "Results",
@@ -2187,6 +2514,7 @@ def main() -> None:
             "History",
             "Comparison",
             "Performance",
+            "Controlled Benchmark",
         ]
     )
 
@@ -2223,6 +2551,12 @@ def main() -> None:
 
         with benchmark_tab:
             render_benchmark_comparison_tab()
+
+    with controlled_tab:
+        render_controlled_benchmark_tab(
+            config=config,
+            settings=settings,
+        )
 
 if __name__ == "__main__":
     main()
