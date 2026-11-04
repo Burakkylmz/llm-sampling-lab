@@ -1656,47 +1656,70 @@ def render_performance_tab() -> None:
 
     st.divider()
 
+    complete_usage = details_df.dropna(
+        subset=["Input Tokens", "Output Tokens"]
+    )
+    complete_total_tokens = (
+        complete_usage["Input Tokens"] + complete_usage["Output Tokens"]
+    )
+
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric(
-            "Total Requests",
-            len(rows),
-            border=True,
-        )
+        st.metric("Total Requests", len(rows), border=True)
 
     with col2:
         st.metric(
             "Average Latency",
-            (
-                f"{measured.mean():.3f} s"
-                if not measured.empty
-                else "N/A"
-            ),
+            f"{measured.mean():.3f} s" if not measured.empty else "N/A",
             border=True,
         )
 
     with col3:
         st.metric(
-            "Input Tokens (reported)",
-            (
-                f"{int(input_usage.sum()):,}"
-                if not input_usage.empty
-                else "N/A"
-            ),
+            "Recorded Total Tokens",
+            f"{int(complete_total_tokens.sum()):,}"
+            if not complete_total_tokens.empty else "N/A",
             border=True,
         )
 
     with col4:
         st.metric(
-            "Output Tokens (reported)",
-            (
-                f"{int(output_usage.sum()):,}"
-                if not output_usage.empty
-                else "N/A"
-            ),
+            "Avg Total Tokens / Request",
+            f"{complete_total_tokens.mean():,.2f}"
+            if not complete_total_tokens.empty else "N/A",
             border=True,
         )
+
+    in_total, in_average, out_total, out_average = st.columns(4)
+
+    in_total.metric(
+        "Input Tokens (reported)",
+        f"{int(input_usage.sum()):,}" if not input_usage.empty else "N/A",
+        border=True,
+    )
+    in_average.metric(
+        "Avg Input Tokens / Request",
+        f"{input_usage.mean():,.2f}" if not input_usage.empty else "N/A",
+        border=True,
+    )
+    out_total.metric(
+        "Output Tokens (reported)",
+        f"{int(output_usage.sum()):,}" if not output_usage.empty else "N/A",
+        border=True,
+    )
+    out_average.metric(
+        "Avg Output Tokens / Request",
+        f"{output_usage.mean():,.2f}" if not output_usage.empty else "N/A",
+        border=True,
+    )
+    st.caption(
+        "Token coverage — input: "
+        f"{len(input_usage)}/{len(rows)}, output: "
+        f"{len(output_usage)}/{len(rows)}, both: "
+        f"{len(complete_usage)}/{len(rows)} requests. "
+        "Averages divide by requests with the relevant token measurements."
+    )
 
     if measured.empty:
         st.info(
@@ -1711,8 +1734,8 @@ def render_performance_tab() -> None:
     ):
         st.warning(
             "Token usage is missing for some requests. "
-            "Displayed token totals include only "
-            "provider-reported values."
+            "Totals and averages use only provider-reported values; "
+            "the combined total uses requests with both counts."
         )
 
     # ----------------------------------------------------
@@ -1760,22 +1783,40 @@ def render_performance_tab() -> None:
     # TOKEN USAGE
     # ----------------------------------------------------
 
-    st.markdown("### Token Usage Comparison")
+    st.markdown("### Average Token Usage per Request")
 
-    token_columns = [
-        "Recorded Input Tokens",
-        "Recorded Output Tokens",
+    average_token_columns = [
+        "Average Input Tokens / Request",
+        "Average Output Tokens / Request",
+        "Average Total Tokens / Request",
     ]
 
-    if chart_df[token_columns].notna().any().any():
+    if chart_df[average_token_columns].notna().any().any():
         st.bar_chart(
-            chart_df[token_columns],
+            chart_df[average_token_columns],
             stack=False,
             sort=False,
             width="stretch",
         )
     else:
         st.info("No token usage data available.")
+
+    with st.expander("View absolute token totals by parameter"):
+        total_token_columns = [
+            "Recorded Input Tokens",
+            "Recorded Output Tokens",
+            "Recorded Total Tokens",
+        ]
+        st.bar_chart(
+            chart_df[total_token_columns],
+            stack=False,
+            sort=False,
+            width="stretch",
+        )
+    st.caption(
+        "Per-request averages use requests with recorded token usage. "
+        "Total token counts rise with request count."
+    )
 
     # ----------------------------------------------------
     # INDIVIDUAL REQUEST LATENCY
@@ -2053,35 +2094,52 @@ def render_benchmark_comparison_tab() -> None:
     # TOKEN COMPARISON
     # --------------------------------------------------
 
-    st.markdown("### Token Usage Comparison")
+    st.markdown("### Average Token Usage per Request")
 
-    token_columns = [
-        "Recorded Input Tokens",
-        "Recorded Output Tokens",
+    average_columns = [
+        "Average Input Tokens / Request",
+        "Average Output Tokens / Request",
+        "Average Total Tokens / Request",
     ]
-
-    token_df = chart_df[
-        token_columns
-    ].apply(
+    average_df = chart_df[average_columns].apply(
         pd.to_numeric,
         errors="coerce",
     )
-
-    if token_df.notna().any().any():
+    if average_df.notna().any().any():
         st.bar_chart(
-            token_df,
+            average_df,
             stack=False,
             width="stretch",
         )
     else:
-        st.info(
-            "Selected reports have no token usage data."
+        st.info("Selected reports have no token usage data.")
+
+    with st.expander("View absolute token totals"):
+        token_columns = [
+            "Recorded Input Tokens",
+            "Recorded Output Tokens",
+            "Recorded Total Tokens",
+        ]
+        totals_df = chart_df[token_columns].apply(
+            pd.to_numeric,
+            errors="coerce",
         )
+        if totals_df.notna().any().any():
+            st.bar_chart(
+                totals_df,
+                stack=False,
+                width="stretch",
+            )
+        else:
+            st.info("Selected reports have no token totals.")
 
     st.caption(
-        "Token totals are based only on reported values. "
-        "Different request counts and provider tokenizers "
-        "can make direct comparisons misleading."
+        "Average tokens per request uses only requests with the "
+        "respective reported token counts. Combined totals and averages "
+        "use requests with both input and output usage. "
+        "See Input/Output/Total Token Coverage in the table above. "
+        "Provider tokenizers may differ, so cross-provider numbers "
+        "are not necessarily directly comparable."
     )
 
     # --------------------------------------------------
@@ -2445,9 +2503,21 @@ def render_controlled_benchmark_tab(
 
     st.markdown("### Benchmark Results")
 
-    st.metric(
-        "Completed Requests",
-        metrics["Requests"],
+    request_count, combined_total, combined_average = st.columns(3)
+    request_count.metric("Completed Requests", metrics["Requests"])
+    combined_total.metric(
+        "Recorded Total Tokens",
+        metrics["Recorded Total Tokens"]
+        if metrics["Recorded Total Tokens"] is not None else "N/A",
+    )
+    combined_average.metric(
+        "Avg Total Tokens / Request",
+        metrics["Average Total Tokens / Request"]
+        if metrics["Average Total Tokens / Request"] is not None else "N/A",
+    )
+    st.caption(
+        "Combined token coverage: "
+        f"{metrics['Total Token Coverage']}/{metrics['Requests']} requests."
     )
 
     st.dataframe(
