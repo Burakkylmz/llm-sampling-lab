@@ -48,8 +48,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # Copy only the installed Python environment
 COPY --from=builder /app/.venv /app/.venv
 
-# Copy runtime configuration
+# Copy runtime configuration and the Streamlit entrypoint.
+# The Python dependencies (including Streamlit) are installed in .venv above.
 COPY settings.toml ./settings.toml
+COPY streamlit_app.py ./streamlit_app.py
+COPY .streamlit/ ./.streamlit/
 
 # Directory for experiment reports and visualizations
 RUN mkdir -p /app/results
