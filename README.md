@@ -108,6 +108,43 @@ docker compose run --rm sampling-lab --help
 
 This command displays the available experiments and simulation options.
 
+### 4.5. Start the Streamlit Web Interface with Docker
+
+The same Docker image now includes the browser-based Streamlit interface.
+From the repository root, run:
+
+```bash
+docker compose up --build -d
+```
+
+Then open **http://localhost:8501**. No local Python or uv installation is needed.
+
+To inspect status and logs or stop the service:
+
+```bash
+docker compose ps
+docker compose logs -f ui
+docker compose down
+```
+
+The existing `sampling-lab` CLI remains available through
+`docker compose run --rm sampling-lab ...`; it is defined as a Compose
+profile so starting the web UI does not also launch a short-lived CLI container.
+
+Saved JSON reports and charts persist in the host's `./results/` folder.
+Docker Compose reads API keys from an optional, locally created `.env` file;
+`.env` is excluded from the Docker build context. For PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Fill in `GROQ_API_KEY` and/or `OPENAI_API_KEY` only if you intend to use
+those providers. Local Ollama can be accessed from the container using
+`http://host.docker.internal:11434` if your Ollama server is reachable there.
+See [Docker web UI guide](docs/docker-ui.md) for Windows and Ollama setup,
+port customization, troubleshooting, and security considerations.
+
 ---
 
 ## 5. Offline Sampling Experiments
