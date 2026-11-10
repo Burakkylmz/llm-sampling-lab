@@ -1,4 +1,6 @@
 
+import os
+
 from ollama import Client
 
 from llm_sampling_lab.domain.models import (
@@ -31,7 +33,9 @@ class OllamaProvider(BaseProvider):
         self._client = (
             client
             if client is not None
-            else Client(host="http://127.0.0.1:11434")
+            else Client(
+                host=os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434"
+            )
         )
 
     def discover_models(self) -> list[DiscoveredModel]:
