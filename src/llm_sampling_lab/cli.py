@@ -120,7 +120,7 @@ def provider_session(
 
     elif name == "ollama":
         with OllamaClient(
-            host="http://127.0.0.1:11434",
+            host=os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434",
             timeout=120.0,
         ) as client:
             yield create_provider(

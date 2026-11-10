@@ -1,526 +1,222 @@
 # LLM Sampling Lab
 
-**A hands-on laboratory for understanding LLM sampling strategies through real API experiments and offline simulations.**
+**A hands-on laboratory for LLM sampling, reproducibility, and performance evaluation.**
 
-LLM Sampling Lab is a Python-based educational project that demonstrates how **Temperature**, **Top-k**, and **Top-p (Nucleus Sampling)** influence probability distributions and text generation.
+LLM Sampling Lab is a Python project for investigating how **Temperature**, **Top-p (nucleus sampling)** and **Top-k** affect probability distributions and text generation. It combines real model experiments, an offline token-sampling simulator, and a **Streamlit dashboard** for interactive experiments and comparative benchmarking.
 
-The project combines three complementary approaches:
+## Quick start: Docker web interface
 
-1. **Real LLM Experiments:** Explore Temperature and Top-p using the Groq Chat Completions API.
-2. **Offline Sampling Simulator:** Apply Temperature, Top-k, and Top-p to a predefined token probability distribution and visualize the results.
-3. **Movie Review Generation:** Combine local Temperature and Top-k sampling for review-style selection with real movie review generation using Groq.
+**Requirements:** Git and Docker Desktop (Windows/macOS) or Docker Engine with Docker Compose (Linux). Python and uv are **not** required on the host.
 
-The laboratory can run locally with Python and `uv`, or inside Docker containers without requiring students to install Python dependencies.
-
-> **Important:** Groq Chat Completions does not expose a Top-k parameter. In the Movie Review Experiment, Top-k is applied locally to the review-style probability distribution. It does not control Groq's internal token sampling.
-
----
-
-## 1. Learning Objectives
-
-After completing this laboratory, participants should be able to:
-
-- Explain how Temperature changes a probability distribution.
-- Describe the difference between Top-k and Top-p sampling.
-- Compare theoretical probabilities with observed sampling frequencies.
-- Understand how random seeds support reproducible experiments.
-- Run real LLM experiments using the Groq API.
-- Analyze output diversity and instruction-following behavior.
-- Identify potential hallucinations and unsupported information in generated text.
-- Save and examine experimental results in JSON format.
-- Generate PNG charts of sampling distributions.
-- Run Python-based experiments using Docker and Docker Compose.
-
----
-
-## 2. Project Features
-
-| Feature                      | Description                                                              |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| Temperature Experiment       | Compare text generation at different temperature values                  |
-| Top-p Experiment             | Explore nucleus sampling through real Groq API requests                  |
-| Local Temperature Simulation | Observe probability scaling without API requests                         |
-| Local Top-k Simulation       | Restrict token candidates to the highest-probability tokens              |
-| Local Top-p Simulation       | Select candidates using cumulative probability thresholds                |
-| Random Token Sampling        | Compare expected probabilities with observed frequencies                 |
-| Movie Review Experiment      | Generate Turkish film reviews using local style selection and Groq       |
-| JSON Persistence             | Save experimental results incrementally                                  |
-| Data Visualization           | Generate PNG charts using Matplotlib                                     |
-| Automated Testing            | Validate sampling algorithms, persistence, CLI behavior, and integration |
-| Docker Support               | Run the project without installing Python locally                        |
-
----
-
-## 3. Technology Stack
-
-| Component               | Technology           |
-| ----------------------- | -------------------- |
-| Programming Language    | Python 3.12          |
-| Dependency Management   | uv                   |
-| LLM Provider            | Groq                 |
-| Default Model           | `openai/gpt-oss-20b` |
-| Numerical Computing     | NumPy                |
-| Visualization           | Matplotlib           |
-| Configuration           | TOML                 |
-| Testing                 | pytest               |
-| Containerization        | Docker               |
-| Container Orchestration | Docker Compose       |
-| Result Storage          | JSON                 |
-
----
-
-## 4. Getting Started
-
-### 4.1. Prerequisites
-
-For the recommended Docker workflow, you need:
-
-- Git
-- Docker Desktop or Docker Engine with Docker Compose
-- An internet connection for downloading the project and building the Docker image
-- A Groq API key for real LLM experiments only
-
-**You do not need to install Python, uv, or Python libraries when using Docker.**
-
-### 4.2. Clone the Repository
-
-```bash
+~~~bash
 git clone https://github.com/Burakkylmz/llm-sampling-lab.git
-
 cd llm-sampling-lab
-```
+docker compose up --build -d
+~~~
 
-If the repository is private, your GitHub account must have permission to access it.
+Open **http://localhost:8501** in your browser.
 
-### 4.3. Build the Docker Image
+The UI starts without cloud API keys. To make live Groq or OpenAI requests, create your own private **.env** file:
 
-```bash
-docker compose build
-```
+**Windows PowerShell:**
 
-Docker automatically prepares the Python runtime and installs the required dependencies.
-
-### 4.4. Check the CLI
-
-```bash
-docker compose run --rm sampling-lab --help
-```
-
-This command displays the available experiments and simulation options.
-
----
-
-## 5. Offline Sampling Experiments
-
-Offline simulations do not require a Groq API key.
-
-The simulator uses the following educational token distribution:
-
-| Token   | Initial Probability |
-| ------- | ------------------: |
-| AI      |                0.40 |
-| Machine |                0.25 |
-| Deep    |                0.15 |
-| Neural  |                0.12 |
-| Data    |                0.08 |
-
-Each simulation applies a sampling transformation and then performs random token selection.
-
-### 5.1. Temperature Simulation
-
-```bash
-docker compose run --rm sampling-lab --simulate temperature --samples 1000 --seed 42
-```
-
-Configured Temperature values:
-
-- 0.5
-- 1.0
-- 1.5
-
-**Expected observations:**
-
-- Temperature below 1 produces a sharper distribution.
-- Temperature equal to 1 preserves the original distribution.
-- Temperature above 1 produces a flatter distribution.
-
-### 5.2. Top-k Simulation
-
-```bash
-docker compose run --rm sampling-lab --simulate top-k --samples 1000 --seed 42
-```
-
-Configured Top-k values:
-
-- 1
-- 3
-- 5
-
-**Expected observations:**
-
-- Top-k = 1 retains only the most probable token.
-- Top-k = 3 retains the three most probable tokens.
-- Top-k = 5 retains all five tokens.
-
-After filtering, the remaining token probabilities are normalized.
-
-### 5.3. Top-p Simulation
-
-```bash
-docker compose run --rm sampling-lab --simulate top-p --samples 1000 --seed 42
-```
-
-Configured Top-p values:
-
-- 0.3
-- 0.7
-- 0.9
-
-**Expected observations:**
-
-Top-p selects the smallest group of high-probability tokens whose cumulative probability reaches the specified threshold.
-
-Unlike Top-k, the number of retained tokens is not fixed.
-
-### 5.4. Expected vs. Observed Probabilities
-
-Every offline simulation compares two distributions:
-
-- **Expected:** The theoretical probability after applying the selected sampling strategy.
-- **Observed:** The relative frequency of token selections during the simulation.
-
-The observed frequencies generally approach theoretical probabilities as the sample count increases, but they do not necessarily match exactly.
-
-The `--seed` parameter helps make experiments reproducible.
-
-PNG charts are generated automatically under:
-
-`results/visualizations/`
-
----
-
-## 6. Groq API Configuration
-
-Real LLM experiments require a Groq API key.
-
-You can obtain your own key from:
-
-https://console.groq.com/keys
-
-### 6.1. Create the Environment File
-
-On Windows PowerShell:
-
-```powershell
+~~~powershell
 Copy-Item .env.example .env
-```
+~~~
 
-On macOS or Linux:
+**macOS / Linux:**
 
-```bash
+~~~bash
 cp .env.example .env
-```
+~~~
 
-Open `.env` and replace the placeholder with your own API key:
+Edit the file and add the keys you need:
 
-```dotenv
-GROQ_API_KEY=your_own_groq_api_key_here
-```
+~~~dotenv
+GROQ_API_KEY=
+OPENAI_API_KEY=
+STREAMLIT_PORT=8501
+~~~
 
-**Never commit `.env` or share your API key.**
+After editing **.env**, recreate the UI container:
 
-### 6.2. Verify API Connectivity
+~~~bash
+docker compose up -d --force-recreate ui
+~~~
 
-```bash
-docker compose run --rm sampling-lab --check-api
-```
+Useful management commands:
 
-A successful connection should produce a response from the configured Groq model.
+~~~bash
+docker compose ps
+docker compose logs -f ui
+docker compose down
+~~~
+
+The dashboard is published to **127.0.0.1** on the host by default. You can change the host port with **STREAMLIT_PORT**. Experiment reports remain in the host's **results/** directory after containers are stopped or recreated.
+
+The original CLI continues to work:
+
+~~~bash
+docker compose run --rm sampling-lab --help
+docker compose run --rm sampling-lab --simulate top-k --samples 1000 --seed 42
+~~~
+
+**More setup information:** [Docker Web UI Guide](docs/docker-ui.md), including Docker Desktop, Ollama networking, troubleshooting, and port configuration.
 
 ---
 
-## 7. Real LLM Sampling Experiments
+## Features
 
-The project supports two real API sampling experiments.
+| Area | Capabilities |
+| --- | --- |
+| **Streamlit UI** | Configure experiments, view results, run analytics, browse history, compare experiments, and execute controlled benchmarks |
+| **Real LLM experiments** | Temperature and Top-p with Groq, OpenAI, and Ollama; native Top-k with Ollama |
+| **Offline simulator** | Temperature, Top-k and Top-p over a fixed probability distribution without API requests |
+| **Movie review generator** | Local Temperature and Top-k select a review style; Groq generates Turkish reviews |
+| **Performance metrics** | Request latency, input/output token usage, per-request averages, measurement coverage |
+| **Benchmark comparison** | Cross-experiment comparisons, mean/median/P95 latency, token consumption and baseline differences |
+| **Reproducibility** | Repetition counts, warm-up requests, separate execution-order seeds, supported generation seeds |
+| **Persistence** | Incremental JSON reports, CSV/JSON exports from supported dashboard views, and PNG plots |
 
-These experiments use a shared prompt that asks the model to generate a short advertising slogan for an electric car brand.
+The dashboard includes **Experiment**, **Results**, **Analytics**, **History**, **Comparison**, **Performance**, and **Controlled Benchmark** tabs. The Performance tab contains **Request Analytics** and **Benchmark Comparison**.
 
-### 7.1. Temperature Experiment
+### Provider support
 
-```bash
+| Provider | Temperature | Top-p | Native Top-k | Required setup |
+| --- | --- | --- | --- | --- |
+| **Groq** | Model-dependent | Model-dependent | No | GROQ_API_KEY |
+| **OpenAI** | Model-dependent | Model-dependent | No | OPENAI_API_KEY |
+| **Ollama** | Model-dependent | Model-dependent | Yes, with suitable models | Ollama service and downloaded model |
+
+**Important:** The implemented Groq and OpenAI adapters do **not** expose native Top-k. In the offline simulator, Top-k is applied locally to an educational distribution. In the movie review experiment, Top-k chooses a **review style** locally; it does not change Groq's token sampling. Native Top-k is available for compatible **Ollama** models.
+
+Use model discovery and capability checks before assuming a parameter is supported. The repository's default Groq model is **openai/gpt-oss-20b**; for OpenAI and Ollama CLI experiments, provide an explicit model identifier.
+
+### Ollama on the host, UI in Docker
+
+The Docker setup configures the Ollama endpoint as **http://host.docker.internal:11434**. It must point to an accessible Ollama server running on your computer, not the loopback address inside the container.
+
+For example:
+
+~~~bash
+ollama pull llama3.2:1b
+ollama list
+~~~
+
+If model discovery fails, verify the Ollama service is running and reachable from Docker. You may need to adjust the Ollama server's listening address, while ensuring it is **not exposed to untrusted networks**. The CLI and provider code read the **OLLAMA_HOST** environment variable, and direct local runs default to **http://127.0.0.1:11434**.
+
+For platform-specific details, see [Docker Web UI Guide](docs/docker-ui.md).
+
+---
+
+## Running experiments
+
+Run commands below from the repository root.
+
+### Offline sampling simulations
+
+No API key or external model is required.
+
+The initial token probabilities are:
+
+| Token | Probability |
+| --- | ---: |
+| AI | 0.40 |
+| Machine | 0.25 |
+| Deep | 0.15 |
+| Neural | 0.12 |
+| Data | 0.08 |
+
+~~~bash
+docker compose run --rm sampling-lab --simulate temperature --samples 10000 --seed 42
+docker compose run --rm sampling-lab --simulate top-k --samples 10000 --seed 42
+docker compose run --rm sampling-lab --simulate top-p --samples 10000 --seed 42
+~~~
+
+The simulator applies each configured parameter value, samples token indices with a seeded random generator, and compares theoretical probabilities with observed frequencies. PNG charts are saved in **results/visualizations/**.
+
+Temperature below 1 concentrates probability on more likely candidates; temperature above 1 flattens the distribution. Top-k retains a fixed number of candidates. Top-p retains the smallest top-probability prefix that reaches the cumulative threshold.
+
+### Live Temperature and Top-p
+
+~~~bash
+# Groq (default provider)
 docker compose run --rm sampling-lab --experiment temperature --repetitions 3
-```
-
-Configured values:
-
-| Parameter   | Value                   |
-| ----------- | ----------------------- |
-| Temperature | 0.1, 0.5, 1.0           |
-| Top-p       | 1.0                     |
-| Repetitions | 3 per temperature value |
-
-The experiment changes Temperature while keeping Top-p fixed.
-
-Use the generated responses to examine variation across repeated requests.
-
-### 7.2. Top-p Experiment
-
-```bash
 docker compose run --rm sampling-lab --experiment top-p --repetitions 3
-```
 
-Configured values:
+# OpenAI (requires an API key and compatible model)
+docker compose run --rm sampling-lab --provider openai --model gpt-4.1-mini --experiment temperature --repetitions 3
+~~~
 
-| Parameter   | Value             |
-| ----------- | ----------------- |
-| Top-p       | 0.3, 0.7, 1.0     |
-| Temperature | 0.7               |
-| Repetitions | 3 per Top-p value |
+These experiments vary one parameter while holding the other fixed. The CLI uses an electric-car slogan prompt; the dashboard allows a custom prompt.
 
-The experiment changes Top-p while keeping Temperature fixed.
+### Native Top-k (Ollama)
 
-### 7.3. Unique Response Ratio
+~~~bash
+docker compose run --rm sampling-lab --provider ollama --model llama3.2:1b --experiment top-k --repetitions 3
+~~~
 
-For the Temperature and Top-p experiments, the project calculates:
+The preset Top-k values are **1, 20, 40**. This experiment forwards Top-k to the local Ollama model rather than applying it only to a simulated distribution.
 
-**Unique Response Ratio (URR) = Number of Unique Responses / Total Responses**
+### Movie review experiment (Groq only)
 
-Example:
-
-If the model produces five responses and three are different:
-
-URR = 3 / 5 = 0.60
-
-**Interpretation:**
-
-- A lower ratio indicates more repeated exact responses.
-- A higher ratio indicates greater exact-text variation.
-- URR does not measure semantic diversity, factual accuracy, or response quality.
-- With only one repetition, URR is always 1.0.
-
-Generated reports are saved under:
-
-- `results/temperature/`
-- `results/top_p/`
-
----
-
-## 8. Movie Review Generation Experiment
-
-The Movie Review Experiment demonstrates how local sampling and real LLM generation can be combined.
-
-It uses a fictional science-fiction drama titled **Son İstasyon**.
-
-### 8.1. Experiment Workflow
-
-The experiment follows these steps:
-
-1. Apply Temperature scaling to a local review-style probability distribution.
-2. Apply local Top-k filtering.
-3. Randomly select a review style using a predefined seed.
-4. Construct a movie review prompt.
-5. Generate a Turkish movie review using the Groq API.
-6. Validate basic structural requirements.
-7. Persist the result in JSON format.
-
-### 8.2. Review Styles
-
-The local style distribution contains four candidates:
-
-| Review Style | Initial Probability |
-| ------------ | ------------------: |
-| Positive     |                0.40 |
-| Critical     |                0.30 |
-| Technical    |                0.20 |
-| Emotional    |                0.10 |
-
-Temperature and Top-k are applied locally to this distribution before a review style is selected.
-
-### 8.3. Experiment Scenarios
-
-| Scenario | Temperature | Local Top-k | Groq Top-p |
-| -------- | ----------: | ----------: | ---------: |
-| 1        |         0.3 |           1 |        1.0 |
-| 2        |         0.3 |           3 |        1.0 |
-| 3        |         1.0 |           1 |        1.0 |
-| 4        |         1.0 |           3 |        1.0 |
-
-The same Temperature value is used for local style selection and Groq text generation.
-
-**Important limitation:** Local Top-k filters the possible review styles. It does not modify the token probabilities inside the Groq model.
-
-### 8.4. Run the Experiment
-
-```bash
+~~~bash
 docker compose run --rm sampling-lab --experiment movie-reviews
-```
+~~~
 
-The command generates four movie reviews.
+The experiment uses the fictional film **Son İstasyon**. Local Temperature and Top-k choose a positive, critical, technical, or emotional style; Groq produces a Turkish review.
 
-The experiment does not use the `--repetitions` option.
+Basic checks verify the film title and an 80–100-word length. These structural checks do **not** establish factual accuracy, fluency, or semantic adherence.
 
-### 8.5. Output Validation
+### Model and capability commands
 
-The experiment performs deterministic checks for:
+~~~bash
+docker compose run --rm sampling-lab --provider groq --list-models
+docker compose run --rm sampling-lab --provider ollama --discover-models
+docker compose run --rm sampling-lab --provider ollama --model llama3.2:1b --show-capabilities
+docker compose run --rm sampling-lab --help
+~~~
 
-- Presence of the specified movie title
-- Required review length of 80–100 words
-
-Validation warnings are stored with each result.
-
-**A completed experiment may still contain validation warnings.**
-
-The current validator does not reliably detect invented story details, semantic inconsistencies, grammatical problems, or review-style violations.
-
-### 8.6. Movie Review JSON Reports
-
-Reports are saved under:
-
-`results/movie_reviews/`
-
-Each report contains:
-
-- Experiment ID
-- Model
-- Movie information
-- Scenario parameters
-- Local review style
-- Generated review
-- Validation issues
-- Experiment status
-- UTC timestamps
-
-Results are saved incrementally after each successful response.
+The CLI actions for simulation, experiments, API checks, model listing, discovery, and capability display are mutually exclusive. Use **--samples** and **--seed** only with offline simulation; **--repetitions** applies to real sampling experiments, not the movie-review CLI.
 
 ---
 
-## 9. Results and Reports
+## Understanding the benchmark dashboard
 
-The project generates two main output formats.
+**Performance → Request Analytics** displays request-level metrics and aggregates by sampling parameter.
 
-| Format | Purpose                                  |
-| ------ | ---------------------------------------- |
-| JSON   | Store real LLM experiment data           |
-| PNG    | Visualize offline sampling distributions |
+**Performance → Benchmark Comparison** compares saved experiments of the same strategy. The numeric comparison table includes the provider/model, number of requests, reported token totals, **average tokens per request**, measurement coverage, and percentage difference from the first selected experiment (E1).
 
-Generated output structure:
+| Measurement | Meaning |
+| --- | --- |
+| Mean / median latency | Central tendency of measured request duration |
+| P95 latency | Approximate upper-tail duration; can be unstable for small samples |
+| Total tokens | Token consumption summed over requests with measured usage |
+| **Average tokens / request** | Reported token usage divided by the number of requests with that usage measurement |
+| Coverage | Number of requests with usage data out of total recorded requests |
+| Unique response ratio | Number of distinct exact response strings divided by total responses |
 
-```text
-results/
-├── temperature/
-│   └── <experiment>.json
-├── top_p/
-│   └── <experiment>.json
-├── movie_reviews/
-│   └── <experiment>.json
-└── visualizations/
-    ├── temperature_0p5.png
-    ├── top-k_3.png
-    └── top-p_0p7.png
-```
+A 20-request experiment will often use more **total** tokens than a 10-request experiment. That alone does not demonstrate lower token efficiency. Compare per-request averages **and** measurement coverage. Input+output totals and averages are computed only when **both** measurements exist for a request; missing usage is not treated as zero.
 
-These filenames are examples; actual files depend on the experiments executed.
+The percentage difference against E1 uses:
 
-### 9.1. JSON Persistence Behavior
+~~~text
+Difference (%) = (Experiment average - E1 average) / E1 average × 100
+~~~
 
-Real experiments use incremental persistence.
+A positive result means higher average consumption than E1; a negative result means lower. Missing or zero baseline values are displayed as **N/A**. Different providers may use different tokenizers, so cross-provider token counts are not necessarily directly comparable.
 
-After each successful API response, the JSON report is updated.
+**Controlled Benchmark** provides configurable repetitions, warm-ups, random execution order, and supported seeds. Warm-up calls are excluded from measured results. Seeds help reproducibility but do not guarantee identical responses from external APIs.
 
-The report can have the following statuses:
-
-| Status      | Meaning                                 |
-| ----------- | --------------------------------------- |
-| `running`   | The experiment has started              |
-| `completed` | All planned scenarios finished          |
-| `failed`    | An exception interrupted the experiment |
-
-When a handled API error occurs, previously saved responses remain available.
-
-An unexpected process termination may leave the report in the `running` state.
-
-### 9.2. Docker Volume Mounting
-
-Docker Compose mounts the host `results/` directory into the container.
-
-As a result, generated JSON reports and PNG charts remain available on your computer even after the container is removed.
+**Interpretation limits:** The benchmark measures usage, timing and exact-text diversity; it does not automatically grade response quality, semantic diversity or monetary cost.
 
 ---
 
-## 10. Local Development with Python and uv
+## Configuration and saved reports
 
-Docker is recommended for participants.
+The main configuration is **settings.toml**. Its default sections include:
 
-Developers can also run the project directly using Python.
-
-### 10.1. Requirements
-
-- Python 3.12
-- uv
-
-### 10.2. Install Dependencies
-
-```bash
-uv sync
-```
-
-### 10.3. Run Offline Simulations
-
-```bash
-uv run sampling-lab --simulate temperature
-
-uv run sampling-lab --simulate top-k
-
-uv run sampling-lab --simulate top-p
-```
-
-### 10.4. Run Real Groq Experiments
-
-Before running real API experiments, configure `GROQ_API_KEY` in your terminal environment.
-
-For direct `uv run` commands, a `.env` file used by Docker Compose is not automatically loaded by the application.
-
-```bash
-uv run sampling-lab --experiment temperature --repetitions 3
-
-uv run sampling-lab --experiment top-p --repetitions 3
-
-uv run sampling-lab --experiment movie-reviews
-```
-
----
-
-## 11. CLI Reference
-
-| Command / Option             | Description                                              |
-| ---------------------------- | -------------------------------------------------------- |
-| `--help`                     | Display CLI options                                      |
-| `--check-api`                | Verify Groq API connectivity                             |
-| `--experiment temperature`   | Run real Temperature experiments                         |
-| `--experiment top-p`         | Run real Top-p experiments                               |
-| `--experiment movie-reviews` | Generate four movie reviews                              |
-| `--repetitions N`            | Set repetitions for Temperature or Top-p API experiments |
-| `--simulate temperature`     | Run offline Temperature simulation                       |
-| `--simulate top-k`           | Run offline Top-k simulation                             |
-| `--simulate top-p`           | Run offline Top-p simulation                             |
-| `--samples N`                | Set offline sample count                                 |
-| `--seed N`                   | Set offline random seed                                  |
-
-`--check-api`, `--experiment`, and `--simulate` are mutually exclusive.
-
-`--samples` and `--seed` apply only to offline simulations.
-
-`--repetitions` applies only to Temperature and Top-p API experiments.
-
----
-
-## 12. Configuration
-
-The project uses `settings.toml` for its main settings.
-
-Example:
-
-```toml
+~~~toml
 [groq]
 model = "openai/gpt-oss-20b"
 
@@ -539,171 +235,107 @@ temperature = 0.7
 top_k_values = [1, 3, 5]
 top_p_values = [0.3, 0.7, 0.9]
 temperature_values = [0.5, 1.0, 1.5]
-```
+~~~
 
-These settings control the original Groq sampling experiments and offline simulations.
+Native Ollama Top-k and movie-review experiments have additional scenario defaults in their respective Python modules.
 
-The Movie Review Experiment currently uses predefined scenarios in `movie_reviews.py` and a fixed seed in its CLI runner.
+Saved results follow this structure:
 
-Changing `settings.toml` does not change the Movie Review scenarios.
+~~~text
+results/
+├── temperature/       # Real experiments
+├── top_p/             # Real experiments
+├── top_k/             # Native Ollama experiments
+├── movie_reviews/     # Review reports
+└── visualizations/    # Offline sampling PNG charts
+~~~
 
-When using Docker Compose, `settings.toml` is mounted read-only into the container. Changes made to this file on the host are available to subsequent Compose runs.
+Experiment JSON records are written incrementally with **running**, **completed**, or **failed** statuses. Reports remain available if a later API request fails; an unexpected process exit may leave a report marked **running**.
 
----
+In Docker Compose, **./results** is mounted to **/app/results** and **settings.toml** is mounted read-only. Data remains on the host when containers are recreated.
 
-## 13. Project Structure
+### Project layout
 
-```text
+~~~text
 llm-sampling-lab/
-├── .dockerignore
 ├── .env.example
-├── .gitignore
-├── .python-version
+├── .streamlit/config.toml
 ├── Dockerfile
 ├── docker-compose.yaml
-├── README.md
-├── pyproject.toml
+├── streamlit_app.py
 ├── settings.toml
+├── pyproject.toml
 ├── uv.lock
-│
 ├── docs/
+│   ├── docker-ui.md
 │   └── participant-quick-start.md
-│
-├── src/
-│   └── llm_sampling_lab/
-│       ├── __init__.py
-│       ├── cli.py
-│       ├── config.py
-│       ├── experiments.py
-│       ├── groq_client.py
-│       ├── movie_reviews.py
-│       ├── results.py
-│       ├── sampling.py
-│       ├── simulator.py
-│       └── visualization.py
-│
+├── src/llm_sampling_lab/
+│   ├── cli.py
+│   ├── sampling.py
+│   ├── simulator.py
+│   ├── results.py
+│   ├── providers/
+│   └── services/
 ├── tests/
-│   ├── test_cli.py
-│   ├── test_config.py
-│   ├── test_experiments.py
-│   ├── test_groq_client.py
-│   ├── test_movie_persistence.py
-│   ├── test_movie_reviews.py
-│   ├── test_persistence_integration.py
-│   ├── test_phase5_e2e.py
-│   ├── test_results.py
-│   ├── test_sampling.py
-│   ├── test_simulator.py
-│   └── test_visualization.py
-│
-└── results/
-    ├── temperature/
-    ├── top_p/
-    ├── movie_reviews/
-    └── visualizations/
-```
-
-The `results/` directory is generated locally and is excluded from version control.
+└── results/             # Generated locally; excluded from Git
+~~~
 
 ---
 
-## 14. Automated Testing
+## Local development without Docker
 
-The project includes automated tests for:
+Requires **Python 3.12+** and **uv**:
 
-- Configuration loading and validation
-- Groq client behavior
-- Temperature scaling
-- Top-k filtering
-- Top-p filtering
-- Random token sampling
-- Reproducible experiments
-- JSON persistence
-- API failure recovery
-- Movie review generation
-- CLI integration
-- Docker-compatible offline workflows
-- PNG visualization
-
-### Run All Tests
-
-```bash
+~~~bash
+uv sync
+uv run streamlit run streamlit_app.py
+uv run sampling-lab --simulate top-k
 uv run pytest -q
-```
+~~~
 
-### Run Movie Review Tests
+Docker Compose automatically reads an optional **.env** file for variable substitution. Direct **uv run** commands do not automatically load it; to use cloud providers locally:
 
-```bash
-uv run pytest tests/test_movie_reviews.py -v
+~~~bash
+uv run --env-file .env streamlit run streamlit_app.py
+~~~
 
-uv run pytest tests/test_movie_persistence.py -v
-```
+## Testing and troubleshooting
 
-Tests use mocks where appropriate, allowing the test suite to run without making real Groq API requests.
+~~~bash
+# Python regression tests
+uv run pytest -q
 
----
+# Docker configuration and web service
+docker compose config --quiet
+docker compose up --build -d
+docker compose ps
+docker compose logs --tail=100 ui
+~~~
 
-## 15. Troubleshooting
+| Symptom | What to check |
+| --- | --- |
+| Docker cannot connect | Docker Desktop / Docker Engine is running |
+| Browser page does not load | Compose service health and UI logs |
+| Port 8501 is occupied | Change **STREAMLIT_PORT** in **.env**, recreate the UI |
+| API authentication fails | Key configured in private **.env** and container recreated |
+| Ollama connection refused | Ollama is running, model installed, and endpoint reachable from Docker |
+| No historic data appears | Local **results/** directory and Compose volume mount |
+| Unsupported sampling parameter | Selected provider/model capabilities |
 
-| Problem                                  | Recommended Action                                |
-| ---------------------------------------- | ------------------------------------------------- |
-| Docker Engine is not running             | Start Docker Desktop and verify `docker version`  |
-| Docker Compose cannot find configuration | Run commands from the repository root             |
-| Missing Groq API key                     | Create `.env` and configure `GROQ_API_KEY`        |
-| API authentication failed                | Check API key validity                            |
-| API rate limit exceeded                  | Reduce repetitions and review account limits      |
-| No PNG charts                            | Check `results/visualizations/`                   |
-| No JSON report                           | Check experiment output and `results/`            |
-| Movie Review validation warnings         | Examine title preservation and word count         |
-| Unsupported CLI option                   | Run `docker compose run --rm sampling-lab --help` |
+The Docker UI guide includes expanded Windows and Ollama troubleshooting.
 
----
+## Security and limitations
 
-## 16. Security and Usage Notes
+- The Streamlit UI is intended for local use and does not implement production authentication.
+- Keep credentials out of source control, shared logs, screenshots and issue reports.
+- Cloud API experiments may incur provider fees or rate limits.
+- Never expose an unauthenticated Ollama server to untrusted networks.
+- Offline simulations use a fixed educational distribution; real autoregressive models recompute probabilities at each generation step.
+- Sampling diversity and resource consumption are not substitutes for evaluation of response correctness.
+- The repository currently contains **no explicit open-source license**; public visibility is not permission to redistribute the source.
 
-- Use your own Groq API key.
-- Never commit `.env` or real API credentials.
-- Do not include secrets in screenshots, shared logs, or issues.
-- Keep generated reports out of version control unless they have been reviewed.
-- Real Groq experiments consume API resources and may be subject to usage limits.
-- Offline simulations do not send requests to Groq.
-- JSON reports may contain prompts and generated content; review them before sharing.
-- A random seed does not guarantee identical responses from an external LLM API.
+## Documentation
 
----
-
-## 17. Educational Limitations
-
-This project is intended to explain sampling behavior and support controlled classroom experiments.
-
-The offline simulator uses a fixed educational probability distribution. Real autoregressive LLMs recalculate token probabilities at each generation step.
-
-The Movie Review Experiment uses Top-k for local review-style selection rather than Groq token-level sampling.
-
-The project does not currently measure:
-
-- Input and output token costs
-- Cached tokens
-- Reasoning token consumption
-- Time to First Token (TTFT)
-- Total inference latency
-- Throughput
-- Monetary API costs
-
-These subjects are outside the scope of this laboratory.
-
----
-
-## 18. Participant Guide
-
-For a step-by-step introduction to Docker setup, offline simulations, real API experiments, and result analysis, see:
-
-[Participant Quick Start](docs/participant-quick-start.md)
-
----
-
-## 19. License
-
-No explicit open-source license is currently included.
-
-Repository access does not automatically grant permission to redistribute or modify the project beyond applicable permissions and law.
+- [Docker Web UI Guide](docs/docker-ui.md)
+- [Participant Quick Start](docs/participant-quick-start.md)
+- [GitHub Issues](https://github.com/Burakkylmz/llm-sampling-lab/issues)
