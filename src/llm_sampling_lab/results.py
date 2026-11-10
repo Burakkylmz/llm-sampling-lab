@@ -1,5 +1,7 @@
 
 import json
+import os
+import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +18,35 @@ from llm_sampling_lab.experiments import SamplingResult
 def _utc_now() -> str:
     """Return the current UTC timestamp."""
     return datetime.now(timezone.utc).isoformat()
+
+
+# A brief, bounded retry handles transient Windows locks from AV/indexers.
+_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
+
+
+def _write_json_atomically(path: Path, data: dict) -> None:
+    """Durably write a report, then replace the destination atomically.
+
+    Never delete the existing report before replacement. If every retry
+    fails, preserve the temporary file for recovery and raise the error.
+    """
+
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+
+    with temporary_path.open("w", encoding="utf-8") as stream:
+        json.dump(data, stream, indent=2, ensure_ascii=False)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+    # The file is closed before trying to rename it.
+    for attempt in range(len(_REPLACE_RETRY_DELAYS) + 1):
+        try:
+            temporary_path.replace(path)
+            return
+        except PermissionError:
+            if attempt == len(_REPLACE_RETRY_DELAYS):
+                raise
+            time.sleep(_REPLACE_RETRY_DELAYS[attempt])
 
 
 class ExperimentRecorder:
@@ -182,23 +213,7 @@ class ExperimentRecorder:
 
     def _save(self) -> None:
         """Atomically write the JSON report."""
-
-        temporary_path = self.file_path.with_suffix(
-            ".json.tmp"
-        )
-
-        content = json.dumps(
-            self.report,
-            indent=2,
-            ensure_ascii=False,
-        )
-
-        temporary_path.write_text(
-            content,
-            encoding="utf-8",
-        )
-
-        temporary_path.replace(self.file_path)
+        _write_json_atomically(self.file_path, self.report)
 
 
 
@@ -317,18 +332,4 @@ class MovieReviewRecorder:
 
     def _save(self) -> None:
         """Write the JSON report using atomic replacement."""
-
-        temporary_path = self.file_path.with_suffix(
-            ".json.tmp"
-        )
-
-        temporary_path.write_text(
-            json.dumps(
-                self.report,
-                indent=2,
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-
-        temporary_path.replace(self.file_path)
+        _write_json_atomically(self.file_path, self.report)
