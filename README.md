@@ -187,6 +187,24 @@ The CLI actions for simulation, experiments, API checks, model listing, discover
 
 ---
 
+## Statistical reliability and execution environment
+
+Controlled benchmarks now include descriptive latency reliability analysis using the
+**nearest-rank** percentile method (P50, P90, P95, P99), sample standard deviation,
+coefficient of variation (CV), and latency measurement coverage. Each parameter
+group receives its own summary and warnings when latency samples are missing
+or upper-tail percentile estimates simply equal the sample maximum.
+These statistics describe a run; they do **not** establish statistically
+significant performance differences. Use comparable experiment conditions
+and adequate independent measurements before drawing conclusions.
+
+New controlled-benchmark JSON reports also contain an optional `environment`
+object with the Python version, operating system, OS release, architecture
+and execution context. In Docker, these are **container runtime details**,
+not a profile of the Windows/macOS host. Hostnames, usernames, file paths
+and environment variables/API keys are intentionally excluded. Older JSON
+reports without this field remain readable.
+
 ## Understanding the benchmark dashboard
 
 **Performance → Request Analytics** displays request-level metrics and aggregates by sampling parameter.
