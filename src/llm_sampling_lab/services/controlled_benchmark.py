@@ -11,6 +11,9 @@ from llm_sampling_lab.results import ExperimentRecorder
 from llm_sampling_lab.services.benchmark_reporting_service import (
     build_benchmark_report,
 )
+from llm_sampling_lab.services.environment_metadata import (
+    capture_environment_metadata,
+)
 from llm_sampling_lab.services.execution_schedule import (
     build_execution_schedule,
 )
@@ -230,6 +233,7 @@ def run_controlled_benchmark(
         randomize_order=config.randomize_order,
         order_seed=config.order_seed,
         output_dir=output_dir,
+        environment=capture_environment_metadata(),
     )
 
     def record(result: SamplingResult) -> None:
