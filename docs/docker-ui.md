@@ -16,14 +16,17 @@ Run these commands in the repository root:
 
 ```powershell
 docker compose up --build -d
+docker compose port ui 8501
 docker compose ps
 ```
 
-Open **http://localhost:8501** in your browser.
+Open the browser URL using the host port printed by `docker compose port ui 8501` (e.g. `http://127.0.0.1:49153`). Docker selects an available host port to avoid collisions; the Streamlit container always listens on port **8501** internally. The host binding remains restricted to **127.0.0.1**, not the public network.
 
-The `ui` service listens on port 8501 inside the container and maps it to
-`127.0.0.1:8501` on your host. The binding is deliberately local-only; it does
-not expose the lab to other computers on the network by default.
+On Windows, a one-command helper builds, starts, and prints the address:
+
+```powershell
+.\scripts\start-ui.ps1
+```
 
 Useful commands:
 
@@ -57,7 +60,6 @@ Edit the file and set your own keys:
 ```dotenv
 GROQ_API_KEY=your_key_here
 OPENAI_API_KEY=
-STREAMLIT_PORT=8501
 ```
 
 - `GROQ_API_KEY` is needed to execute Groq requests.
@@ -118,13 +120,13 @@ file refers to the **destination URL**; it is not the server's listen setting.
 - Both CLI and UI use the same reports directory and Docker image.
 - The app's bundled Streamlit theme is copied into `/app/.streamlit/`.
 
-To change the host browser port, use in `.env`:
+The host browser port is assigned automatically on each container creation. To find the current one:
 
-```dotenv
-STREAMLIT_PORT=8502
+```powershell
+docker compose port ui 8501
 ```
 
-Then recreate the UI container and visit **http://localhost:8502**.
+`STREAMLIT_PORT` is no longer used by the default Compose configuration. Remove old port overrides from `.env` if you wish to avoid confusion.
 
 ## Debugging
 
@@ -136,8 +138,7 @@ docker compose logs --tail=100 ui
 docker compose config
 ```
 
-- **Port already in use:** Set `STREAMLIT_PORT=8502` in `.env`, then
-  `docker compose up -d --force-recreate ui`.
+- **Port already in use:** The default configuration uses an automatically assigned host port to avoid fixed-port conflicts. Recreate the UI with `docker compose up -d --force-recreate ui`, then use `docker compose port ui 8501` to discover the new mapping.
 - **No model found / Ollama connection refused:** Check
   `host.docker.internal:11434` reachability and that the requested model is installed.
 - **Groq/OpenAI authentication error:** Verify your local `.env` file and
@@ -158,6 +159,5 @@ docker compose run --rm sampling-lab --help
 uv run pytest
 ```
 
-Use `http://localhost:8501` to confirm that the sidebar, experiments,
-comparison and saved results load. Testing against a real Ollama or cloud API
+Open the host URL returned by `docker compose port ui 8501` to confirm that the sidebar, experiments, comparison and saved results load. Testing against a real Ollama or cloud API
 requires those services separately and is not part of the Docker image build.
