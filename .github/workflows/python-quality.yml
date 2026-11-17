@@ -1,0 +1,64 @@
+name: Python Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev --python 3.12
+
+      - name: Run test suite
+        run: uv run --no-sync pytest -q
+
+      - name: Check Python syntax
+        run: uv run --no-sync python -m compileall -q src scripts streamlit_app.py
+
+      - name: Validate release prerequisites
+        run: uv run --no-sync python scripts/release_check.py
+
+  static-checks:
+    name: Baseline lint and typed release tooling
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+
+      - name: Lint release tooling
+        run: uvx ruff@0.17.5 check --select E4,E7,E9,F scripts/release_check.py tests/test_release_check.py
+
+      - name: Type-check release tooling
+        run: uvx mypy@2.4.1 --strict scripts/release_check.py

@@ -1,0 +1,58 @@
+name: Release Candidate Build
+
+# Packaging only: this workflow does not publish to PyPI or create a release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag matching pyproject.toml (for example v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Validate tag and build distributables
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out exact release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev --python 3.12
+
+      - name: Verify tag and release assets
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: uv run --no-sync python scripts/release_check.py --tag "$RELEASE_TAG"
+
+      - name: Run full test suite
+        run: uv run --no-sync pytest -q
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Validate distribution metadata
+        run: uvx twine@7.0.0 check dist/*
+
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: llm-sampling-lab-release-candidate
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

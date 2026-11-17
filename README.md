@@ -4,6 +4,15 @@
 
 LLM Sampling Lab is a Python project for investigating how **Temperature**, **Top-p (nucleus sampling)** and **Top-k** affect probability distributions and text generation. It combines real model experiments, an offline token-sampling simulator, and a **Streamlit dashboard** for interactive experiments and comparative benchmarking.
 
+## Continuous Integration & Release Readiness
+
+GitHub Actions now defines **Python Quality** (Linux/Windows tests and scoped
+lint/type checks), **Docker Smoke** (real HTTP readiness), **Dependency Review**
+(PR dependency security checks), and a **manual Release Candidate Build**
+(version-tag verification, tests and package artifacts — no publishing).
+See [Quality Gates and Release Readiness](docs/quality-gates.md) for local
+commands, setup notes, and current coverage limitations.
+
 ## Quick start: Docker web interface
 
 **Requirements:** Git and Docker Desktop (Windows/macOS) or Docker Engine with Docker Compose (Linux). Python and uv are **not** required on the host.
