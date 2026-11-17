@@ -12,9 +12,16 @@ LLM Sampling Lab is a Python project for investigating how **Temperature**, **To
 git clone https://github.com/Burakkylmz/llm-sampling-lab.git
 cd llm-sampling-lab
 docker compose up --build -d
+docker compose port ui 8501
 ~~~
 
-Open **http://localhost:8501** in your browser.
+Docker automatically selects an available local-only host port. Open the URL shown by `docker compose port ui 8501` (for example, `http://127.0.0.1:49153`).
+
+On Windows PowerShell, you can instead launch the UI and print its URL in one step:
+
+~~~powershell
+.\scripts\start-ui.ps1
+~~~
 
 The UI starts without cloud API keys. To make live Groq or OpenAI requests, create your own private **.env** file:
 
@@ -35,7 +42,6 @@ Edit the file and add the keys you need:
 ~~~dotenv
 GROQ_API_KEY=
 OPENAI_API_KEY=
-STREAMLIT_PORT=8501
 ~~~
 
 After editing **.env**, recreate the UI container:
@@ -52,7 +58,7 @@ docker compose logs -f ui
 docker compose down
 ~~~
 
-The dashboard is published to **127.0.0.1** on the host by default. You can change the host port with **STREAMLIT_PORT**. Experiment reports remain in the host's **results/** directory after containers are stopped or recreated.
+The dashboard is published to **127.0.0.1** on a Docker-selected available port (not a fixed 8501/8502). Retrieve its URL after startup using `docker compose port ui 8501`. `STREAMLIT_PORT` is no longer required; the host port can change when the container is recreated. Experiment reports remain in the host's **results/** directory after containers are stopped or recreated.
 
 The original CLI continues to work:
 
