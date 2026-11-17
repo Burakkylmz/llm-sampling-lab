@@ -69,6 +69,7 @@ class ExperimentRecorder:
         randomize_order: bool = False,
         order_seed: int | None = None,
         environment: dict[str, str] | None = None,
+        max_output_tokens: int | None = None,
     ) -> None:
         if experiment_type not in (
             "temperature",
@@ -83,6 +84,11 @@ class ExperimentRecorder:
             raise ValueError(
                 "repetitions must be a positive integer."
             )
+
+        if max_output_tokens is not None and (
+            type(max_output_tokens) is not int or max_output_tokens < 1
+        ):
+            raise ValueError("max_output_tokens must be positive.")
 
         self.experiment_id = uuid4().hex
         self.experiment_type = experiment_type
@@ -131,6 +137,8 @@ class ExperimentRecorder:
         # Optional addition preserves compatibility with historical JSON.
         if environment is not None:
             self.report["environment"] = dict(environment)
+        if max_output_tokens is not None:
+            self.report["parameters"]["max_output_tokens"] = max_output_tokens
 
         self._save()
 
