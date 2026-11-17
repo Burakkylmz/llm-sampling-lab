@@ -230,8 +230,12 @@ def test_controlled_benchmark_saves_environment_and_statistics(tmp_path):
     assert raw["status"] == "completed"
     assert raw["environment"]["python_version"]
     assert raw["environment"]["execution_context"] in {"container", "unknown"}
+    assert raw["parameters"]["max_output_tokens"] == 128
 
     benchmark = outcome.benchmark_report
     assert benchmark["metadata"]["environment"] == raw["environment"]
     assert benchmark["statistical_reliability"]["overall"]["Requests"] == 4
     assert len(benchmark["statistical_reliability"]["by_parameter"]) == 2
+    assert benchmark["metadata"]["max_output_tokens"] == 128
+    assert benchmark["benchmark_quality"]["overall"]["Requests"] == 4
+    assert benchmark["benchmark_quality"]["overall"]["CI Lower (s)"] is None

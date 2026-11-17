@@ -12,6 +12,10 @@ from llm_sampling_lab.services.statistical_reliability_service import (
     build_statistical_reliability_report,
 )
 
+from llm_sampling_lab.services.benchmark_quality_service import (
+    build_benchmark_quality_report,
+)
+
 
 SUPPORTED_STRATEGIES = {
     "temperature",
@@ -144,6 +148,7 @@ def build_benchmark_report(
         ),
         "order_seed": parameters.get("order_seed"),
         "environment": report.get("environment"),
+        "max_output_tokens": parameters.get("max_output_tokens"),
     }
 
     return {
@@ -151,6 +156,9 @@ def build_benchmark_report(
         "metrics": metrics,
         "by_parameter": parameter_summary,
         "statistical_reliability": build_statistical_reliability_report(
+            results, strategy
+        ),
+        "benchmark_quality": build_benchmark_quality_report(
             results, strategy
         ),
     }

@@ -234,6 +234,7 @@ def run_controlled_benchmark(
         order_seed=config.order_seed,
         output_dir=output_dir,
         environment=capture_environment_metadata(),
+        max_output_tokens=config.max_output_tokens,
     )
 
     def record(result: SamplingResult) -> None:
