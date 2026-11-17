@@ -205,6 +205,37 @@ not a profile of the Windows/macOS host. Hostnames, usernames, file paths
 and environment variables/API keys are intentionally excluded. Older JSON
 reports without this field remain readable.
 
+## Bootstrap confidence and outlier diagnostics
+
+The **Controlled Benchmark** tab now shows an exploratory 95% percentile-bootstrap
+interval for **mean request latency** (1,000 resamples, a dedicated bootstrap
+seed of 42), along with **Tukey's 1.5×IQR outlier flags**. Bootstrap seeds are
+local analysis settings and are separate from generation and execution-order
+seeds. Outliers are **not removed** from latency calculations.
+
+- Fewer than **5 measured requests**: no bootstrap interval is generated.
+- Fewer than **4 measurements**: IQR outlier detection is not run.
+- Fewer than **20 observations**: the UI warns that bootstrap confidence
+  intervals may be unstable.
+- Missing latency values remain missing and are reported as coverage gaps.
+
+Performance → Benchmark Comparison can optionally show an exploratory
+bootstrap **difference of mean latencies (Experiment 2 − Experiment 1)**,
+including percentile bounds, when **exactly two** completed experiments have
+the same documented provider/model, prompt, parameter values, fixed values,
+repetition counts, seeds/order settings, warm-up, max-output-token budget and
+runtime metadata. New controlled runs record `max_output_tokens` so that
+this check is possible. Older runs without required metadata are still
+supported in the existing descriptive comparison UI, but do **not** qualify
+for bootstrap run-to-run comparisons.
+
+These intervals assume that sampled requests behave like independent
+observations. Real LLM measurements can be correlated by cache state,
+hardware contention, shared system load, request ordering and time trends.
+A compatible metadata snapshot is **not proof** that runtime conditions
+are identical. The tool does not compute p-values, claim causality, or infer
+that nonoverlapping confidence intervals prove a model is superior.
+
 ## Understanding the benchmark dashboard
 
 **Performance → Request Analytics** displays request-level metrics and aggregates by sampling parameter.
