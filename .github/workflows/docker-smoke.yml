@@ -1,0 +1,60 @@
+name: Docker Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Build and verify Streamlit + CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Build UI image
+        run: docker compose build ui
+
+      - name: Start UI
+        run: docker compose up -d --no-build ui
+
+      - name: Verify actual HTTP readiness on assigned localhost port
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapping="$(docker compose port ui 8501)"
+          port="${mapping##*:}"
+          if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+            echo "Unexpected published port mapping: $mapping" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --retry 30 --retry-delay 2 --retry-all-errors \
+            "http://127.0.0.1:$port/_stcore/health"
+          docker compose exec -T ui python -c \
+            "from pathlib import Path; assert Path('/app/streamlit_app.py').is_file()"
+          docker compose ps
+
+      - name: Verify packaged CLI
+        run: docker compose run --rm sampling-lab --help
+
+      - name: Debug UI when checks fail
+        if: failure()
+        run: docker compose logs --tail=100 ui
+
+      - name: Remove CI containers
+        if: always()
+        run: docker compose down --remove-orphans
