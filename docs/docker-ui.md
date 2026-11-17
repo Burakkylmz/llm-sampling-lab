@@ -117,6 +117,11 @@ file refers to the **destination URL**; it is not the server's listen setting.
 - Reports and charts are shared to the host through `./results:/app/results`.
 - `settings.toml` is bind-mounted read-only; edit it locally to change
   experiment defaults. The container can be restarted to load changes.
+- `streamlit_app.py` is also bind-mounted read-only into the UI container.
+  This prevents an older cached Docker image from failing with
+  `File does not exist: streamlit_app.py`. It does not change the CLI service.
+- The PowerShell launcher verifies `/_stcore/health` before printing a ready URL.
+  On failure, it displays container status and recent UI logs.
 - Both CLI and UI use the same reports directory and Docker image.
 - The app's bundled Streamlit theme is copied into `/app/.streamlit/`.
 
