@@ -25,6 +25,14 @@ services:
 
   ui:
     <<: *app
+    # Bind the actual host entrypoint so the dashboard works even if a cached
+    # or older Dockerfile image did not package streamlit_app.py.
+    # This list intentionally retains the shared results/settings mounts:
+    # Compose does not merge volume arrays from YAML anchors.
+    volumes:
+      - ./results:/app/results
+      - ./settings.toml:/app/settings.toml:ro
+      - ./streamlit_app.py:/app/streamlit_app.py:ro
     init: true
     entrypoint:
       - streamlit
