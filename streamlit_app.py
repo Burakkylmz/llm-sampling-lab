@@ -2565,6 +2565,58 @@ def render_controlled_benchmark_tab(
         width="stretch",
     )
 
+    reliability = outcome.benchmark_report["statistical_reliability"]
+
+    st.markdown("### Statistical Reliability")
+
+    overall = reliability["overall"]
+    col_p50, col_p90, col_p95, col_p99 = st.columns(4)
+
+    for column, percentile in zip(
+        (col_p50, col_p90, col_p95, col_p99),
+        ("P50", "P90", "P95", "P99"),
+    ):
+        value = overall[f"{percentile} Latency (s)"]
+        column.metric(
+            f"{percentile} Latency",
+            f"{value:.4f} s" if value is not None else "N/A",
+        )
+
+    st.caption(
+        f"Latency coverage: {overall['Measured Requests']}/"
+        f"{overall['Requests']} | "
+        f"Percentile method: {reliability['percentile_method']}"
+    )
+
+    distribution_rows = [
+        {key: value for key, value in group.items()
+         if key != "Warnings"}
+        for group in reliability["by_parameter"]
+    ]
+    st.dataframe(
+        pd.DataFrame(distribution_rows),
+        hide_index=True,
+        width="stretch",
+    )
+
+    for group in reliability["by_parameter"]:
+        for warning in group["Warnings"]:
+            st.warning(f"Parameter {group['Parameter']}: {warning}")
+
+    st.markdown("### Execution Environment")
+    environment = outcome.benchmark_report["metadata"].get(
+        "environment"
+    )
+    if isinstance(environment, dict):
+        st.json(environment)
+    else:
+        st.info("Environment metadata not available for this report.")
+
+    st.caption(
+        "Docker runtime metadata describes the container, not the "
+        "Windows/macOS/Linux host. No user identifiers are recorded."
+    )
+
     st.caption(
         f"Saved report: {outcome.report_path}"
     )

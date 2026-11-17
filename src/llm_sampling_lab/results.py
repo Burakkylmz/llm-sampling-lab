@@ -68,6 +68,7 @@ class ExperimentRecorder:
         seed: int | None = None,
         randomize_order: bool = False,
         order_seed: int | None = None,
+        environment: dict[str, str] | None = None,
     ) -> None:
         if experiment_type not in (
             "temperature",
@@ -126,6 +127,10 @@ class ExperimentRecorder:
             "results": [],
             "summary": [],
         }
+
+        # Optional addition preserves compatibility with historical JSON.
+        if environment is not None:
+            self.report["environment"] = dict(environment)
 
         self._save()
 

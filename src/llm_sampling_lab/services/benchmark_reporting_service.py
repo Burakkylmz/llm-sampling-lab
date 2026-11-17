@@ -8,6 +8,10 @@ from llm_sampling_lab.services.performance_service import (
     summarize_performance_rows,
 )
 
+from llm_sampling_lab.services.statistical_reliability_service import (
+    build_statistical_reliability_report,
+)
+
 
 SUPPORTED_STRATEGIES = {
     "temperature",
@@ -139,12 +143,16 @@ def build_benchmark_report(
             "randomize_order"
         ),
         "order_seed": parameters.get("order_seed"),
+        "environment": report.get("environment"),
     }
 
     return {
         "metadata": metadata,
         "metrics": metrics,
         "by_parameter": parameter_summary,
+        "statistical_reliability": build_statistical_reliability_report(
+            results, strategy
+        ),
     }
 
 
