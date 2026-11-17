@@ -2728,6 +2728,24 @@ def render_controlled_benchmark_tab(
         key="controlled_download_json",
     )
 
+    st.download_button(
+        "Download Quality Analysis JSON",
+        data=json.dumps(
+            {
+                "metadata": outcome.benchmark_report["metadata"],
+                "statistical_reliability": (
+                    outcome.benchmark_report["statistical_reliability"]
+                ),
+                "benchmark_quality": quality,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        file_name="benchmark_quality_analysis.json",
+        mime="application/json",
+        key="controlled_download_quality_json",
+    )
+
 
 # ============================================================
 # MAIN APPLICATION
