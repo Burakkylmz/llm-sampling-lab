@@ -46,6 +46,10 @@ from llm_sampling_lab.services.controlled_benchmark import (
     run_controlled_benchmark,
 )
 
+from llm_sampling_lab.services.benchmark_quality_service import (
+    compare_benchmark_mean_latency,
+)
+
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -2193,6 +2197,71 @@ def render_benchmark_comparison_tab() -> None:
     )
 
     # --------------------------------------------------
+    # EXPLORATORY CONFIDENCE COMPARISON
+    # --------------------------------------------------
+
+    st.divider()
+    st.markdown("### Bootstrap Confidence Comparison")
+    st.caption(
+        "Exploratory independent bootstrap estimates of mean latency. "
+        "Only two experiments with matching documented settings can be "
+        "compared; matched metadata cannot eliminate load or time effects."
+    )
+
+    confidence_comparison = None
+    if len(selected_reports) != 2:
+        st.info("Select exactly two experiments for bootstrap comparison.")
+    else:
+        confidence_comparison = compare_benchmark_mean_latency(
+            selected_reports[0], selected_reports[1]
+        )
+
+        if not confidence_comparison["comparable"]:
+            st.info(
+                "Bootstrap comparison unavailable: experiment conditions "
+                "are not sufficiently documented or compatible."
+            )
+            for reason in confidence_comparison["reasons"]:
+                st.caption(f"• {reason}")
+        else:
+            estimate = confidence_comparison["overall"]
+            if estimate is None:
+                st.warning(
+                    "At least five complete latency measurements per "
+                    "experiment are required to estimate an interval."
+                )
+            else:
+                st.dataframe(
+                    pd.DataFrame([estimate]),
+                    hide_index=True,
+                    width="stretch",
+                )
+                st.caption(
+                    "Delta = Experiment 2 minus Experiment 1. Negative means "
+                    "lower observed mean latency in Experiment 2."
+                )
+
+            parameter_estimates = [
+                {"Parameter": item["Parameter"], **item["Estimate"]}
+                for item in confidence_comparison["by_parameter"]
+                if item["Estimate"] is not None
+            ]
+            if parameter_estimates:
+                st.markdown("#### Parameter-Level Bootstrap Estimates")
+                st.dataframe(
+                    pd.DataFrame(parameter_estimates),
+                    hide_index=True,
+                    width="stretch",
+                )
+            for message in confidence_comparison["warnings"]:
+                st.warning(message)
+
+    st.caption(
+        "These intervals rely on an independent-samples assumption and "
+        "do not establish causality or statistical significance."
+    )
+
+    # --------------------------------------------------
     # EXPORTS
     # --------------------------------------------------
 
@@ -2208,6 +2277,7 @@ def render_benchmark_comparison_tab() -> None:
         "summary_rows": comparison["summary_rows"],
         "parameter_rows": comparison["parameter_rows"],
         "warnings": warnings,
+        "bootstrap_comparison": confidence_comparison,
     }
 
     csv_col, json_col = st.columns(2)
@@ -2602,6 +2672,35 @@ def render_controlled_benchmark_tab(
     for group in reliability["by_parameter"]:
         for warning in group["Warnings"]:
             st.warning(f"Parameter {group['Parameter']}: {warning}")
+
+    st.markdown("### Bootstrap Confidence & Outliers")
+    quality = outcome.benchmark_report["benchmark_quality"]
+    st.caption(
+        "95% iid bootstrap confidence intervals for mean request latency "
+        f"({quality['resamples']} resamples, seed "
+        f"{quality['bootstrap_seed']}). Tukey IQR flags outliers but "
+        "does not exclude them from the analysis."
+    )
+    quality_rows = [
+        {
+            key: (
+                ", ".join(str(value) for value in val)
+                if key == "Outlier Values (s)" else val
+            )
+            for key, val in item.items()
+            if key != "Warnings"
+        }
+        for item in quality["by_parameter"]
+    ]
+    st.dataframe(
+        pd.DataFrame(quality_rows),
+        hide_index=True,
+        width="stretch",
+    )
+    for item in quality["by_parameter"]:
+        for message in item["Warnings"]:
+            st.warning(f"Parameter {item['Parameter']}: {message}")
+    st.caption(quality["interpretation"])
 
     st.markdown("### Execution Environment")
     environment = outcome.benchmark_report["metadata"].get(
