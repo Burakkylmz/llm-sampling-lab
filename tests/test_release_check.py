@@ -1,8 +1,18 @@
 """Tests for version and asset preflight without external services."""
 
+import importlib.util
 from pathlib import Path
 
-from scripts.release_check import REQUIRED_FILES, validate_release
+# Load this standalone CLI script by filename. pytest's entrypoint does not
+# guarantee the repository root is importable as a Python package.
+script_path = Path(__file__).resolve().parents[1] / "scripts" / "release_check.py"
+spec = importlib.util.spec_from_file_location("release_check", script_path)
+assert spec is not None and spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+REQUIRED_FILES = module.REQUIRED_FILES
+validate_release = module.validate_release
 
 
 def make_project(root: Path, version: str = "0.1.0") -> None:
