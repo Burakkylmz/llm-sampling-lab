@@ -33,8 +33,10 @@ services:
       - --server.address=0.0.0.0
       - --server.port=8501
       - --server.headless=true
+    # Let Docker choose a free host port; keep Streamlit bound to loopback only.
+    # Find the selected port with: docker compose port ui 8501
     ports:
-      - "127.0.0.1:${STREAMLIT_PORT:-8501}:8501"
+      - "127.0.0.1::8501"
     healthcheck:
       test:
         - CMD
